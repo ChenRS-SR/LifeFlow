@@ -415,9 +415,8 @@ def list_tasks(
         # 收件箱：未分类的任务（task_type=inbox 且未完成的）
         query = query.filter(models.Task.task_type == TaskType.INBOX, models.Task.status != TaskStatus.COMPLETED)
     elif view == "today":
-        # 今天：计划今天做 或 截止今天 或 已逾期（未完成的）
+        # 今天：计划今天做 或 截止今天 或 已逾期（包含已完成）
         query = query.filter(
-            models.Task.status != TaskStatus.COMPLETED,
             models.Task.is_inbox == 0,
             ((models.Task.scheduled_date == today) | 
              (models.Task.due_date == today) |
