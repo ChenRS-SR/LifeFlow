@@ -8,7 +8,7 @@ import {
 import { format, startOfWeek, endOfWeek, eachDayOfInterval, isSameDay, isToday, isPast, parseISO, isWithinInterval } from 'date-fns';
 import { taskAPI, projectAPI } from '../services/api';
 
-type ViewType = 'inbox' | 'today' | 'week' | 'overdue' | 'todo' | 'completed' | 'detail' | 'project';
+type ViewType = 'inbox' | 'today' | 'week' | 'overdue' | 'todo' | 'completed' | 'someday' | 'trash' | 'detail' | 'project';
 type ProjectTaskFilter = 'all' | 'pending' | 'completed';
 
 interface Task {
@@ -87,6 +87,8 @@ const VIEW_CONFIG: Record<ViewType, { label: string; icon: React.ReactNode; colo
   overdue: { label: '已逾期', icon: <AlertCircle className="w-4 h-4" />, color: 'text-red-600', desc: '逾期任务' },
   todo: { label: '待办清单', icon: <Circle className="w-4 h-4" />, color: 'text-gray-600', desc: '所有待办' },
   completed: { label: '已完成', icon: <CheckCircle2 className="w-4 h-4" />, color: 'text-emerald-600', desc: '已完成任务' },
+  someday: { label: '将来也许', icon: <Clock className="w-4 h-4" />, color: 'text-pink-500', desc: '暂不执行的任务' },
+  trash: { label: '垃圾箱', icon: <Trash2 className="w-4 h-4" />, color: 'text-red-500', desc: '废弃的任务' },
   detail: { label: '详细视图', icon: <List className="w-4 h-4" />, color: 'text-indigo-600', desc: '详细信息' },
   project: { label: '项目详情', icon: <Folder className="w-4 h-4" />, color: 'text-orange-600', desc: '项目详情' },
 };
@@ -1347,7 +1349,7 @@ export default function Tasks() {
         
         <div className="space-y-1">
           <p className="text-xs font-medium text-gray-400 uppercase px-3 mb-2">视图</p>
-          {(['inbox', 'today', 'week', 'overdue', 'todo', 'completed', 'detail'] as ViewType[]).map((view) => (
+          {(['inbox', 'today', 'week', 'overdue', 'todo', 'completed', 'someday', 'trash'] as ViewType[]).map((view) => (
             <button
               key={view}
               onClick={() => { setCurrentView(view); setSelectedProject(null); }}

@@ -444,6 +444,15 @@ def list_tasks(
             models.Task.status != TaskStatus.COMPLETED,
             models.Task.is_inbox == 0
         )
+    elif view == "someday":
+        # 将来也许：task_type=someday 且未完成的
+        query = query.filter(
+            models.Task.task_type == TaskType.SOMEDAY,
+            models.Task.status != TaskStatus.COMPLETED
+        )
+    elif view == "trash":
+        # 垃圾箱：task_type=trash
+        query = query.filter(models.Task.task_type == TaskType.TRASH)
     elif view == "completed":
         # 已完成
         query = query.filter(models.Task.status == TaskStatus.COMPLETED)
