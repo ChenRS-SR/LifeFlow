@@ -493,7 +493,10 @@ export default function Tasks() {
       await loadProjectGoals();
       // 刷新项目数据以更新进度
       const projectRes = await projectAPI.get(selectedProject.id);
-      setSelectedProject({ ...selectedProject, ...projectRes.data });
+      const updatedProject = { ...selectedProject, ...projectRes.data };
+      setSelectedProject(updatedProject);
+      // 同时更新左侧项目导航栏的进度
+      setProjects(prev => prev.map(p => p.id === selectedProject.id ? { ...p, ...projectRes.data } : p));
       setShowGoalModal(false);
       setEditingGoal(null);
       setGoalForm({ title: '', description: '' });
@@ -510,7 +513,10 @@ export default function Tasks() {
       await loadProjectGoals();
       // 刷新项目数据以更新进度
       const projectRes = await projectAPI.get(selectedProject.id);
-      setSelectedProject({ ...selectedProject, ...projectRes.data });
+      const updatedProject = { ...selectedProject, ...projectRes.data };
+      setSelectedProject(updatedProject);
+      // 同时更新左侧项目导航栏的进度
+      setProjects(prev => prev.map(p => p.id === selectedProject.id ? { ...p, ...projectRes.data } : p));
     } catch (err) {
       console.error('删除目标失败:', err);
     }
@@ -523,7 +529,10 @@ export default function Tasks() {
       await loadProjectGoals();
       // 刷新项目数据以更新进度
       const projectRes = await projectAPI.get(selectedProject.id);
-      setSelectedProject({ ...selectedProject, ...projectRes.data });
+      const updatedProject = { ...selectedProject, ...projectRes.data };
+      setSelectedProject(updatedProject);
+      // 同时更新左侧项目导航栏的进度
+      setProjects(prev => prev.map(p => p.id === selectedProject.id ? { ...p, ...projectRes.data } : p));
     } catch (err) {
       console.error('切换目标状态失败:', err);
     }
