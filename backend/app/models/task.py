@@ -12,8 +12,11 @@ from app.db.database import Base
 
 class TaskType(str, enum.Enum):
     """任务类型"""
-    TASK = "task"      # 重要任务
-    TODO = "todo"      # 待办事项
+    SCHEDULE = "schedule"    # 日程（有明确日期）
+    TODO = "todo"            # 待办（需要完成）
+    SOMEDAY = "someday"      # 将来也许
+    TRASH = "trash"          # 垃圾箱
+    INBOX = "inbox"          # 未分类/收件箱
 
 
 class TaskStatus(str, enum.Enum):

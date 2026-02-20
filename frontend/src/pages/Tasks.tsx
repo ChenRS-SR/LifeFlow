@@ -15,7 +15,7 @@ interface Task {
   id: number;
   title: string;
   description?: string;
-  task_type: 'task' | 'todo';
+  task_type: 'schedule' | 'todo' | 'someday' | 'trash' | 'inbox';
   status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
   priority: 1 | 2 | 3 | 4;
   due_date?: string;
@@ -60,6 +60,14 @@ const PRIORITY_CONFIG = {
   2: { label: '中', color: 'text-blue-500', bg: 'bg-blue-100', border: 'border-blue-200', dot: 'bg-blue-400' },
   3: { label: '高', color: 'text-orange-500', bg: 'bg-orange-100', border: 'border-orange-200', dot: 'bg-orange-400' },
   4: { label: '紧急', color: 'text-red-500', bg: 'bg-red-100', border: 'border-red-200', dot: 'bg-red-400' },
+};
+
+const TASK_TYPE_CONFIG: Record<string, { label: string; color: string; bg: string; icon: string }> = {
+  schedule: { label: '日程', color: 'text-blue-600', bg: 'bg-blue-50', icon: '📅' },
+  todo: { label: '待办', color: 'text-green-600', bg: 'bg-green-50', icon: '✅' },
+  someday: { label: '将来也许', color: 'text-purple-600', bg: 'bg-purple-50', icon: '💭' },
+  trash: { label: '垃圾箱', color: 'text-red-600', bg: 'bg-red-50', icon: '🗑️' },
+  inbox: { label: '未分类', color: 'text-gray-600', bg: 'bg-gray-50', icon: '📥' },
 };
 
 const PROJECT_STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
@@ -147,7 +155,8 @@ export default function Tasks() {
   const [newTaskScheduledType, setNewTaskScheduledType] = useState<string>('');
   const [newTaskProjectId, setNewTaskProjectId] = useState<number | ''>('');
   const [newTaskEstimatedPomodoros, setNewTaskEstimatedPomodoros] = useState<number | ''>('');
-  const [newTaskType, setNewTaskType] = useState<'task' | 'todo'>('task');
+  const [newTaskType, setNewTaskType] = useState<'schedule' | 'todo' | 'someday' | 'trash' | 'inbox'>('inbox');
+  const [newTaskScheduledDate, setNewTaskScheduledDate] = useState('');
   const [newTaskDescription, setNewTaskDescription] = useState('');
   const [newTaskDueDate, setNewTaskDueDate] = useState('');
   
@@ -347,6 +356,7 @@ export default function Tasks() {
         title: newTaskTitle,
         description: newTaskDescription || undefined,
         task_type: newTaskType,
+        scheduled_date: newTaskScheduledDate || undefined,
         priority: newTaskPriority,
         scheduled_type: newTaskScheduledType || undefined,
         due_date: newTaskDueDate || undefined,
@@ -369,10 +379,11 @@ export default function Tasks() {
     setNewTaskDescription('');
     setNewTaskPriority(2);
     setNewTaskScheduledType('');
+    setNewTaskScheduledDate('');
     setNewTaskDueDate('');
     setNewTaskProjectId('');
     setNewTaskEstimatedPomodoros('');
-    setNewTaskType('task');
+    setNewTaskType('inbox');
   };
 
   // ==================== 创建项目 ====================
@@ -508,11 +519,9 @@ export default function Tasks() {
           }`}>
             {task.title}
           </h3>
-          {task.task_type === 'task' && (
-            <span className={`text-xs px-1.5 py-0.5 rounded ${PRIORITY_CONFIG[task.priority].bg} ${PRIORITY_CONFIG[task.priority].color}`}>
-              {PRIORITY_CONFIG[task.priority].label}
-            </span>
-          )}
+          <span className={`text-xs px-1.5 py-0.5 rounded ${TASK_TYPE_CONFIG[task.task_type]?.bg || 'bg-gray-100'} ${TASK_TYPE_CONFIG[task.task_type]?.color || 'text-gray-600'}`}>
+            {TASK_TYPE_CONFIG[task.task_type]?.icon} {TASK_TYPE_CONFIG[task.task_type]?.label || task.task_type}
+          </span>
         </div>
         
         <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-gray-500">
@@ -674,7 +683,11 @@ export default function Tasks() {
                   </td>
                 )}
                 {visibleColumns.includes('task_type') && (
-                  <td className="px-4 py-3 text-sm text-gray-500">{task.task_type === 'task' ? '任务' : '待办'}</td>
+                  <td className="px-4 py-3">
+                    <span className={`text-xs px-2 py-1 rounded ${TASK_TYPE_CONFIG[task.task_type]?.bg || 'bg-gray-100'} ${TASK_TYPE_CONFIG[task.task_type]?.color || 'text-gray-600'}`}>
+                      {TASK_TYPE_CONFIG[task.task_type]?.icon} {TASK_TYPE_CONFIG[task.task_type]?.label || task.task_type}
+                    </span>
+                  </td>
                 )}
                 {visibleColumns.includes('priority') && (
                   <td className="px-4 py-3">
@@ -1193,42 +1206,54 @@ export default function Tasks() {
                 />
               </div>
               
-              {/* 类型和优先级 */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">任务类型</label>
-                  <select 
-                    value={newTaskType} 
-                    onChange={(e) => setNewTaskType(e.target.value as 'task' | 'todo')} 
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  >
-                    <option value="task">重要任务</option>
-                    <option value="todo">待办事项</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">优先级</label>
-                  <select 
-                    value={newTaskPriority} 
-                    onChange={(e) => setNewTaskPriority(Number(e.target.value) as 1 | 2 | 3 | 4)} 
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  >
-                    <option value={1}>低</option>
-                    <option value={2}>中</option>
-                    <option value={3}>高</option>
-                    <option value={4}>紧急</option>
-                  </select>
-                </div>
+              {/* 任务类型 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">任务类型</label>
+                <select 
+                  value={newTaskType} 
+                  onChange={(e) => setNewTaskType(e.target.value as 'schedule' | 'todo' | 'someday' | 'trash' | 'inbox')} 
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                >
+                  <option value="schedule">📅 日程（有明确日期）</option>
+                  <option value="todo">✅ 待办（需要完成）</option>
+                  <option value="someday">💭 将来也许</option>
+                  <option value="trash">🗑️ 垃圾箱</option>
+                  <option value="inbox">📥 未分类</option>
+                </select>
+              </div>
+
+              {/* 优先级 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">优先级</label>
+                <select 
+                  value={newTaskPriority} 
+                  onChange={(e) => setNewTaskPriority(Number(e.target.value) as 1 | 2 | 3 | 4)} 
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                >
+                  <option value={1}>低</option>
+                  <option value={2}>中</option>
+                  <option value={3}>高</option>
+                  <option value={4}>紧急</option>
+                </select>
               </div>
               
-              {/* 截止日期和预估番茄钟 */}
-              <div className="grid grid-cols-2 gap-4">
+              {/* 截止日期、计划日期和预估番茄钟 */}
+              <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">截止日期</label>
                   <input 
                     type="date" 
                     value={newTaskDueDate} 
                     onChange={(e) => setNewTaskDueDate(e.target.value)} 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">计划日期</label>
+                  <input 
+                    type="date" 
+                    value={newTaskScheduledDate} 
+                    onChange={(e) => setNewTaskScheduledDate(e.target.value)} 
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                   />
                 </div>
@@ -1243,23 +1268,6 @@ export default function Tasks() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                   />
                 </div>
-              </div>
-              
-              {/* 计划时间 */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">计划时间</label>
-                <select 
-                  value={newTaskScheduledType} 
-                  onChange={(e) => setNewTaskScheduledType(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                >
-                  <option value="">选择计划时间...</option>
-                  <option value="today">今天</option>
-                  <option value="tomorrow">明天</option>
-                  <option value="week">本周</option>
-                  <option value="month">本月</option>
-                  <option value="year">今年</option>
-                </select>
               </div>
               
               {/* 所属项目 */}
@@ -1401,42 +1409,54 @@ export default function Tasks() {
                 />
               </div>
               
-              {/* 类型和优先级 */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">任务类型</label>
-                  <select 
-                    value={newTaskType} 
-                    onChange={(e) => setNewTaskType(e.target.value as 'task' | 'todo')} 
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  >
-                    <option value="task">重要任务</option>
-                    <option value="todo">待办事项</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">优先级</label>
-                  <select 
-                    value={newTaskPriority} 
-                    onChange={(e) => setNewTaskPriority(Number(e.target.value) as 1 | 2 | 3 | 4)} 
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  >
-                    <option value={1}>低</option>
-                    <option value={2}>中</option>
-                    <option value={3}>高</option>
-                    <option value={4}>紧急</option>
-                  </select>
-                </div>
+              {/* 任务类型 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">任务类型</label>
+                <select 
+                  value={newTaskType} 
+                  onChange={(e) => setNewTaskType(e.target.value as 'schedule' | 'todo' | 'someday' | 'trash' | 'inbox')} 
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                >
+                  <option value="schedule">📅 日程（有明确日期）</option>
+                  <option value="todo">✅ 待办（需要完成）</option>
+                  <option value="someday">💭 将来也许</option>
+                  <option value="trash">🗑️ 垃圾箱</option>
+                  <option value="inbox">📥 未分类</option>
+                </select>
+              </div>
+
+              {/* 优先级 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">优先级</label>
+                <select 
+                  value={newTaskPriority} 
+                  onChange={(e) => setNewTaskPriority(Number(e.target.value) as 1 | 2 | 3 | 4)} 
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                >
+                  <option value={1}>低</option>
+                  <option value={2}>中</option>
+                  <option value={3}>高</option>
+                  <option value={4}>紧急</option>
+                </select>
               </div>
               
-              {/* 截止日期和预估番茄钟 */}
-              <div className="grid grid-cols-2 gap-4">
+              {/* 截止日期、计划日期和预估番茄钟 */}
+              <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">截止日期</label>
                   <input 
                     type="date" 
                     value={newTaskDueDate} 
                     onChange={(e) => setNewTaskDueDate(e.target.value)} 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">计划日期</label>
+                  <input 
+                    type="date" 
+                    value={newTaskScheduledDate} 
+                    onChange={(e) => setNewTaskScheduledDate(e.target.value)} 
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                   />
                 </div>
@@ -1451,23 +1471,6 @@ export default function Tasks() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                   />
                 </div>
-              </div>
-              
-              {/* 计划时间 */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">计划时间</label>
-                <select 
-                  value={newTaskScheduledType} 
-                  onChange={(e) => setNewTaskScheduledType(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                >
-                  <option value="">选择计划时间...</option>
-                  <option value="today">今天</option>
-                  <option value="tomorrow">明天</option>
-                  <option value="week">本周</option>
-                  <option value="month">本月</option>
-                  <option value="year">今年</option>
-                </select>
               </div>
             </div>
             
