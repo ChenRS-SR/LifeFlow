@@ -412,8 +412,8 @@ def list_tasks(
     query = db.query(models.Task).filter(models.Task.user_id == 1)
     
     if view == "inbox":
-        # 收件箱：未整理的想法（未完成的）
-        query = query.filter(models.Task.is_inbox == 1, models.Task.status != TaskStatus.COMPLETED)
+        # 收件箱：未分类的任务（task_type=inbox 且未完成的）
+        query = query.filter(models.Task.task_type == TaskType.INBOX, models.Task.status != TaskStatus.COMPLETED)
     elif view == "today":
         # 今天：计划今天做 或 截止今天 或 已逾期（未完成的）
         query = query.filter(
@@ -1179,9 +1179,11 @@ def init_default_data():
             db.commit()
             print(f"[INIT] 创建 {len(default_habits)} 个默认习惯")
         
-        # 创建随机测试任务（30条左右）
-        existing_tasks = db.query(models.Task).filter(models.Task.user_id == user.id).first()
-        if not existing_tasks:
+        # 创建随机测试任务（确保至少有30条）
+        task_count = db.query(models.Task).filter(models.Task.user_id == user.id).count()
+        if task_count >= 30:
+            print(f"[INIT] 已有 {task_count} 条任务，无需生成")
+        else:
             import random
             from datetime import date, timedelta
             
@@ -1208,7 +1210,7 @@ def init_default_data():
             feb_end = date(2026, 2, 28)
             feb_days = (feb_end - feb_start).days + 1
             
-            num_tasks = random.randint(28, 32)  # 30条左右
+            num_tasks = max(30 - task_count, random.randint(5, 10))  # 确保至少30条，再多生成5-10条
             created_count = 0
             
             for i in range(num_tasks):
@@ -1268,7 +1270,8 @@ def init_default_data():
                 created_count += 1
             
             db.commit()
-            print(f"[INIT] 创建 {created_count} 个随机测试任务")
+            total = task_count + created_count
+            print(f"[INIT] 原有 {task_count} 条任务，新增 {created_count} 条，现有共 {total} 条任务")
     finally:
         db.close()
 
