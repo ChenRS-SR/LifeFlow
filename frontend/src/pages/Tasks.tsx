@@ -136,6 +136,9 @@ export default function Tasks() {
   const [showWeekPicker, setShowWeekPicker] = useState(false);
   const [weekPickerDate, setWeekPickerDate] = useState('');
   
+  // 项目搜索
+  const [projectSearch, setProjectSearch] = useState('');
+  
   // 筛选状态
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [dateRange, setDateRange] = useState<{start?: string; end?: string}>({});
@@ -405,6 +408,9 @@ export default function Tasks() {
       setNewProjectName('');
       setNewProjectTargetDate('');
       setShowProjectModal(false);
+      // 强制刷新项目列表
+      const projectsRes = await projectAPI.list();
+      setProjects(projectsRes.data || []);
       loadData();
     } catch (err) {
       console.error('创建项目失败:', err);
@@ -1361,26 +1367,59 @@ export default function Tasks() {
           ))}
         </div>
         
-        <div>
+        <div className="flex flex-col min-h-0">
           <div className="flex items-center justify-between px-3 mb-2">
             <p className="text-xs font-medium text-gray-400 uppercase">项目</p>
             <button onClick={() => setShowProjectModal(true)} className="text-blue-600 hover:text-blue-700"><Plus className="w-4 h-4" /></button>
           </div>
-          <div className="space-y-1">
-            {projects.map((project) => (
-              <div key={project.id} onClick={() => selectProject(project)} className={`px-3 py-2 rounded-lg cursor-pointer ${selectedProject?.id === project.id && currentView === 'project' ? 'bg-blue-50 border border-blue-200' : 'hover:bg-gray-100'}`}>
-                <div className="flex items-center gap-2 text-sm text-gray-700">
-                  <Folder className="w-4 h-4 text-gray-400" />
-                  <span className="flex-1 truncate">{project.name}</span>
-                </div>
-                <div className="mt-1.5 flex items-center gap-2">
-                  <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                    <div className="h-full bg-blue-500 rounded-full" style={{ width: `${project.progress}%` }} />
+          
+          {/* 项目搜索框 */}
+          <div className="px-3 mb-2">
+            <div className="relative">
+              <input
+                type="text"
+                value={projectSearch}
+                onChange={(e) => setProjectSearch(e.target.value)}
+                placeholder="搜索项目..."
+                className="w-full px-3 py-1.5 pl-8 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500"
+              />
+              <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              {projectSearch && (
+                <button
+                  onClick={() => setProjectSearch('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+          
+          {/* 项目列表 - 带滚动条 */}
+          <div className="overflow-y-auto max-h-[calc(100vh-400px)] space-y-1 px-1">
+            {projects
+              .filter(p => p.name.toLowerCase().includes(projectSearch.toLowerCase()))
+              .map((project) => (
+                <div key={project.id} onClick={() => selectProject(project)} className={`px-3 py-2 rounded-lg cursor-pointer ${selectedProject?.id === project.id && currentView === 'project' ? 'bg-blue-50 border border-blue-200' : 'hover:bg-gray-100'}`}>
+                  <div className="flex items-center gap-2 text-sm text-gray-700">
+                    <Folder className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                    <span className="flex-1 truncate" title={project.name}>{project.name}</span>
                   </div>
-                  <span className="text-xs text-gray-500">{Math.round(project.progress)}%</span>
+                  <div className="mt-1.5 flex items-center gap-2">
+                    <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                      <div className="h-full bg-blue-500 rounded-full" style={{ width: `${project.progress}%` }} />
+                    </div>
+                    <span className="text-xs text-gray-500">{Math.round(project.progress)}%</span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            {projects.filter(p => p.name.toLowerCase().includes(projectSearch.toLowerCase())).length === 0 && (
+              <p className="text-xs text-gray-400 text-center py-4">
+                {projectSearch ? '未找到匹配的项目' : '暂无项目'}
+              </p>
+            )}
           </div>
         </div>
       </div>
