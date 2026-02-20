@@ -34,6 +34,7 @@ export interface Goal {
   area?: string;
   status: GoalStatus;
   progress: number;
+  project_id?: number;
   created_at: string;
   key_results: KeyResult[];
 }

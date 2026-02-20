@@ -1355,7 +1355,7 @@ export default function Tasks() {
         
         <div className="space-y-1">
           <p className="text-xs font-medium text-gray-400 uppercase px-3 mb-2">视图</p>
-          {(['inbox', 'today', 'week', 'overdue', 'todo', 'completed', 'someday', 'trash'] as ViewType[]).map((view) => (
+          {(['inbox', 'today', 'week', 'overdue', 'todo', 'completed', 'someday', 'trash', 'detail'] as ViewType[]).map((view) => (
             <button
               key={view}
               onClick={() => { setCurrentView(view); setSelectedProject(null); }}

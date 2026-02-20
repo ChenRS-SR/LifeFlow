@@ -51,5 +51,5 @@ class Project(Base):
     # 关联关系
     user = relationship("User", back_populates="projects")
     tasks = relationship("Task", back_populates="project")
-    goals = relationship("ProjectGoal", back_populates="project", cascade="all, delete-orphan")
-    okr_goals = relationship("Goal", back_populates="project")
+    project_goals = relationship("ProjectGoal", back_populates="project", cascade="all, delete-orphan")
+    goals = relationship("Goal", back_populates="project")

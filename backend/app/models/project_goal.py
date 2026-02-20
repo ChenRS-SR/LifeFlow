@@ -33,4 +33,4 @@ class ProjectGoal(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     # 关联关系
-    project = relationship("Project", back_populates="goals")
+    project = relationship("Project", back_populates="project_goals")
