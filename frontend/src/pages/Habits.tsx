@@ -64,7 +64,7 @@ export default function Habits() {
     setCurrentDate(addDays(currentDate, offset * 7));
   };
   
-  const toggleCheck = async (habitId: number, dateStr: string, currentStatus: any, allowOverflow: boolean) => {
+  const toggleCheck = async (habitId: number, dateStr: string, currentStatus: any) => {
     try {
       if (currentStatus.completed) {
         // 已完成则取消（重置为0）
@@ -296,8 +296,7 @@ export default function Habits() {
                             onClick={() => canEdit(status.date) && toggleCheck(
                               item.habit.id, 
                               status.date, 
-                              status, 
-                              item.habit.allow_overflow
+                              status
                             )}
                             disabled={!canEdit(status.date)}
                             className={`w-10 h-10 rounded-lg mx-auto flex items-center justify-center transition-all ${

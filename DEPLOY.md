@@ -511,6 +511,106 @@ curl http://localhost
 
 默认账号：`admin` / `admin123`
 
+### 3.6新的部署方式
+
+```bash
+cd /opt/LifeFlow
+
+# 创建部署脚本
+cat > deploy-simple.sh << 'EOF'
+#!/bin/bash
+
+echo "🚀 开始部署 LifeFlow..."
+
+# 1. 安装依赖
+apt update
+apt install -y python3-pip python3-venv nginx nodejs npm
+
+# 2. 部署后端
+echo "📦 部署后端..."
+cd /opt/LifeFlow/backend
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt -q
+
+# 启动后端（后台运行）
+pkill -f "uvicorn" 2>/dev/null
+nohup uvicorn app.main:app --host 0.0.0.0 --port 8000 > /var/log/backend.log 2>&1 &
+sleep 2
+echo "✅ 后端已启动"
+
+# 3. 构建前端
+echo "🔨 构建前端..."
+cd /opt/LifeFlow/frontend
+npm install -q
+npm run build 2>/dev/null
+echo "✅ 前端构建完成"
+
+# 4. 配置 Nginx
+echo "⚙️ 配置 Nginx..."
+cat > /etc/nginx/sites-available/lifeflow << 'NGINX'
+server {
+    listen 80;
+    server_name _;
+    
+    location / {
+        root /opt/LifeFlow/frontend/dist;
+        index index.html;
+        try_files $uri $uri/ /index.html;
+    }
+    
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+NGINX
+
+rm -f /etc/nginx/sites-enabled/default
+ln -sf /etc/nginx/sites-available/lifeflow /etc/nginx/sites-enabled/
+nginx -t && systemctl restart nginx
+
+echo ""
+echo "🎉 部署完成！"
+echo "访问地址: http://你的服务器IP"
+echo "默认账号: admin / admin123"
+EOF
+
+chmod +x deploy-simple.sh
+bash deploy-simple.sh
+```
+
+目前是已经部署了，暂时先不管，等版本更新的时候再说。
+
+#### 3.7常见运维命令
+
+```bash
+# 查看后端状态
+ps aux | grep uvicorn
+
+# 重启后端
+cd /opt/LifeFlow/backend
+pkill -f uvicorn
+source venv/bin/activate
+nohup uvicorn app.main:app --host 0.0.0.0 --port 8000 > backend.log 2>&1 &
+
+# 查看日志
+tail -f /opt/LifeFlow/backend/backend.log
+tail -f /var/log/nginx/error.log
+
+# 重启 Nginx
+systemctl restart nginx
+
+# 备份数据库
+cp /opt/LifeFlow/backend/lifeflow.db /root/lifeflow-backup-$(date +%Y%m%d).db
+```
+
+
+
+
+
 ---
 
 ## 四、域名与 HTTPS（可选）

@@ -212,7 +212,7 @@ export default function Tasks() {
         setTasks(projectTasks);
       } else {
         const [tasksRes, projectsRes] = await Promise.all([
-          taskAPI.list(currentView === 'detail' ? 'all' : currentView),
+          taskAPI.list(currentView === 'detail' || currentView === 'week' ? 'all' : currentView),
           projectAPI.list(),
         ]);
         const loadedTasks = tasksRes.data || [];
@@ -1056,22 +1056,29 @@ export default function Tasks() {
     const weekEnd = endOfWeek(baseDate, { weekStartsOn: 1 });
     const weekDays = eachDayOfInterval({ start: weekStart, end: weekEnd });
     
-    // 获取本周所有任务（包括已完成的），不过滤 completed
-    const getTaskDisplayDate = (task: Task): string | null => task.due_date || task.scheduled_date || null;
+    // 获取任务的计划日期（用于周视图显示）
+    // 优先使用 scheduled_date（计划执行日期），如果没有则使用 due_date（截止日期）
+    const getTaskScheduledDate = (task: Task): string | null => task.scheduled_date || task.due_date || null;
+    
+    // 获取任务的截止日期
+    const getTaskDueDate = (task: Task): string | null => task.due_date || null;
     
     // 逾期任务：截止日期在本周开始之前且未完成的
     const overdueTasks = tasks.filter(t => {
-      if (!t.due_date) return false;
-      const due = parseISO(t.due_date);
+      if (t.status === 'completed') return false; // 已完成的不是逾期
+      const dueDateStr = getTaskDueDate(t);
+      if (!dueDateStr) return false;
+      const due = parseISO(dueDateStr);
+      // 逾期：截止日期 < 本周开始时间 且 不是今天（今天的在正常任务里）
       return due < weekStart && !isToday(due);
     });
     
-    // 本周范围内的任务（包括已完成的）
+    // 本周范围内的任务：根据计划日期（scheduled_date 或 due_date）判断是否显示在本周
     const weekTasks = tasks.filter(t => {
-      const displayDate = getTaskDisplayDate(t);
-      if (!displayDate) return false;
-      const date = parseISO(displayDate);
-      return date >= weekStart && date <= weekEnd;
+      const scheduledDateStr = getTaskScheduledDate(t);
+      if (!scheduledDateStr) return false;
+      const scheduledDate = parseISO(scheduledDateStr);
+      return scheduledDate >= weekStart && scheduledDate <= weekEnd;
     });
     
     const isCurrentWeek = weekOffset === 0;
@@ -1262,8 +1269,8 @@ export default function Tasks() {
           {/* 周一至周日 */}
           {weekDays.map((day, index) => {
             const dayTasks = tasks.filter(t => {
-              const displayDate = getTaskDisplayDate(t);
-              return displayDate && isSameDay(parseISO(displayDate), day);
+              const scheduledDate = getTaskScheduledDate(t);
+              return scheduledDate && isSameDay(parseISO(scheduledDate), day);
             });
             const isTodayDate = isToday(day);
             
