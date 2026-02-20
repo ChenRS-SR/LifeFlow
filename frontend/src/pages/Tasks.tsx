@@ -581,6 +581,104 @@ export default function Tasks() {
     setDragOverGoalIndex(null);
   };
 
+  // ==================== Markdown 预览组件 ====================
+  const MarkdownPreview = ({ content }: { content: string }) => {
+    if (!content) {
+      return (
+        <div className="flex-1 p-4 overflow-y-auto">
+          <p className="text-gray-400 italic text-center mt-20">开始输入 Markdown 内容，此处将显示预览...</p>
+        </div>
+      );
+    }
+
+    // 解析 Markdown 为 HTML
+    const parseMarkdown = (text: string): string => {
+      let html = text;
+
+      // 代码块 ```code```
+      html = html.replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre class="bg-gray-800 text-gray-100 p-3 rounded-lg overflow-x-auto my-3 text-xs font-mono"><code>$2</code></pre>');
+      
+      // 行内代码 `code`
+      html = html.replace(/`([^`]+)`/g, '<code class="bg-gray-100 text-pink-600 px-1.5 py-0.5 rounded text-xs font-mono">$1</code>');
+
+      // 分割线 --- 或 ***
+      html = html.replace(/^\s*[-*]{3,}\s*$/gm, '<hr class="border-t border-gray-200 my-4" />');
+
+      // 勾选框 - [ ] 和 - [x]
+      html = html.replace(/^- \[ \] (.*$)/gim, '<div class="flex items-center gap-2 my-1"><span class="w-4 h-4 border-2 border-gray-300 rounded flex-shrink-0"></span><span class="text-gray-700">$1</span></div>');
+      html = html.replace(/^- \[x\] (.*$)/gim, '<div class="flex items-center gap-2 my-1"><span class="w-4 h-4 bg-emerald-500 border-2 border-emerald-500 rounded flex-shrink-0 flex items-center justify-center text-white text-xs">✓</span><span class="text-gray-400 line-through">$1</span></div>');
+
+      // 表格 | a | b |
+      const tableRegex = /\|(.+)\|\n\|[-\s|]+\|\n((?:\|.+\|\n?)+)/g;
+      html = html.replace(tableRegex, (match, header, rows) => {
+        const headers = header.split('|').map((h: string) => h.trim()).filter((h: string) => h);
+        const rowData = rows.trim().split('\n').map((row: string) => 
+          row.split('|').map((cell: string) => cell.trim()).filter((cell: string) => cell)
+        );
+        
+        let tableHtml = '<table class="w-full border-collapse my-3 text-sm"><thead><tr>';
+        headers.forEach((h: string) => {
+          tableHtml += `<th class="border border-gray-200 px-3 py-2 bg-gray-50 text-left font-medium text-gray-700">${h}</th>`;
+        });
+        tableHtml += '</tr></thead><tbody>';
+        
+        rowData.forEach((row: string[]) => {
+          tableHtml += '<tr>';
+          row.forEach((cell: string) => {
+            tableHtml += `<td class="border border-gray-200 px-3 py-2 text-gray-600">${cell}</td>`;
+          });
+          tableHtml += '</tr>';
+        });
+        tableHtml += '</tbody></table>';
+        return tableHtml;
+      });
+
+      // 标题 # ## ###
+      html = html.replace(/^### (.*$)/gim, '<h3 class="text-lg font-bold text-gray-800 mt-4 mb-2">$1</h3>');
+      html = html.replace(/^## (.*$)/gim, '<h2 class="text-xl font-bold text-gray-900 mt-5 mb-3 border-b border-gray-200 pb-1">$1</h2>');
+      html = html.replace(/^# (.*$)/gim, '<h1 class="text-2xl font-bold text-gray-900 mt-4 mb-4">$1</h1>');
+
+      // 粗体 **text**
+      html = html.replace(/\*\*(.*?)\*\*/g, '<strong class="text-gray-900">$1</strong>');
+      
+      // 斜体 *text*
+      html = html.replace(/\*(.*?)\*/g, '<em class="text-gray-600">$1</em>');
+
+      // 有序列表 1. item
+      html = html.replace(/^\d+\.\s+(.*$)/gim, '<li class="ml-4 text-gray-700 my-1 list-decimal"><span>$1</span></li>');
+      
+      // 无序列表 - item（注意：要在勾选框之后处理）
+      html = html.replace(/^-\s+(.*$)/gim, '<li class="ml-4 text-gray-700 my-1 list-disc"><span>$1</span></li>');
+
+      // 链接 [text](url)
+      html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" class="text-blue-600 hover:underline">$1</a>');
+
+      // 段落（处理换行）
+      const paragraphs = html.split('\n\n');
+      html = paragraphs.map(p => {
+        p = p.trim();
+        if (!p) return '';
+        // 如果已经是HTML标签开头，不包裹
+        if (p.startsWith('<') && !p.startsWith('<li')) return p;
+        // 如果是列表项，包裹在ul中
+        if (p.includes('<li')) {
+          const isOrdered = p.includes('list-decimal');
+          return `<${isOrdered ? 'ol' : 'ul'} class="${isOrdered ? 'list-decimal' : 'list-disc'} my-2">${p}</${isOrdered ? 'ol' : 'ul'}>`;
+        }
+        return `<p class="text-gray-700 my-2">${p}</p>`;
+      }).join('');
+
+      return html;
+    };
+
+    return (
+      <div 
+        className="flex-1 p-4 overflow-y-auto prose prose-sm max-w-none"
+        dangerouslySetInnerHTML={{ __html: parseMarkdown(content) }}
+      />
+    );
+  };
+
   // ==================== 渲染组件 ====================
   const renderTaskCard = (task: Task) => (
     <div
@@ -1874,11 +1972,14 @@ export default function Tasks() {
               {/* 左侧：编辑器 */}
               <div className="flex-1 flex flex-col border-r border-gray-200">
                 <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 text-xs text-gray-500 flex items-center justify-between">
-                  <span>📝 Markdown 编辑</span>
+                  <span>📝 Markdown 编辑（支持 #标题 **粗体** `代码` -[]勾选框 |表格| ）</span>
                   <div className="flex gap-1">
                     <button onClick={() => setOutlineContent(v => v + '# 标题\n')} className="px-2 py-0.5 hover:bg-gray-200 rounded" title="标题">#</button>
                     <button onClick={() => setOutlineContent(v => v + '- 列表项\n')} className="px-2 py-0.5 hover:bg-gray-200 rounded" title="列表">-</button>
                     <button onClick={() => setOutlineContent(v => v + '**粗体**')} className="px-2 py-0.5 hover:bg-gray-200 rounded" title="粗体">B</button>
+                    <button onClick={() => setOutlineContent(v => v + '`代码`')} className="px-2 py-0.5 hover:bg-gray-200 rounded font-mono text-xs" title="代码">&lt;/&gt;</button>
+                    <button onClick={() => setOutlineContent(v => v + '- [ ] 待办\n')} className="px-2 py-0.5 hover:bg-gray-200 rounded" title="勾选框">☐</button>
+                    <button onClick={() => setOutlineContent(v => v + '---\n')} className="px-2 py-0.5 hover:bg-gray-200 rounded" title="分割线">―</button>
                   </div>
                 </div>
                 <textarea
@@ -1895,24 +1996,7 @@ export default function Tasks() {
                 <div className="px-4 py-2 bg-gray-100 border-b border-gray-200 text-xs text-gray-500">
                   👁️ 实时预览
                 </div>
-                <div 
-                  className="flex-1 p-4 overflow-y-auto prose prose-sm max-w-none"
-                  dangerouslySetInnerHTML={{ 
-                    __html: outlineContent 
-                      ? outlineContent
-                          .replace(/^### (.*$)/gim, '<h3 class="text-lg font-bold text-gray-800 mt-4 mb-2">$1</h3>')
-                          .replace(/^## (.*$)/gim, '<h2 class="text-xl font-bold text-gray-900 mt-5 mb-3 border-b border-gray-200 pb-1">$1</h2>')
-                          .replace(/^# (.*$)/gim, '<h1 class="text-2xl font-bold text-gray-900 mt-4 mb-4">$1</h1>')
-                          .replace(/^\*\*\*(.*?)\*\*/gim, '<li class="ml-4 text-gray-700 my-1">$1</li>')
-                          .replace(/^\*\*(.*?)\*\*/gim, '<li class="ml-4 text-gray-700 my-1">$1</li>')
-                          .replace(/\*\*(.*?)\*\*/gim, '<strong class="text-gray-900">$1</strong>')
-                          .replace(/\*(.*?)\*/gim, '<em class="text-gray-600">$1</em>')
-                          .replace(/^\d+\.\s+(.*$)/gim, '<li class="ml-4 text-gray-700 my-1 list-decimal"><span>$1</span></li>')
-                          .replace(/^-\s+(.*$)/gim, '<li class="ml-4 text-gray-700 my-1 list-disc"><span>$1</span></li>')
-                          .replace(/\n/gim, '<br />')
-                      : '<p class="text-gray-400 italic text-center mt-20">开始输入 Markdown 内容，此处将显示预览...</p>'
-                  }}
-                />
+                <MarkdownPreview content={outlineContent} />
               </div>
             </div>
             
