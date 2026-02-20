@@ -1112,11 +1112,17 @@ export default function Tasks() {
               
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">状态</label>
-                  <select value={editForm.status || ''} onChange={(e) => setEditForm({ ...editForm, status: e.target.value as any })} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
-                    <option value="pending">待处理</option>
-                    <option value="in_progress">进行中</option>
-                    <option value="completed">已完成</option>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">任务类型</label>
+                  <select 
+                    value={editForm.task_type || 'inbox'} 
+                    onChange={(e) => setEditForm({ ...editForm, task_type: e.target.value as any })} 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  >
+                    <option value="inbox">📥 未分类</option>
+                    <option value="schedule">📅 日程</option>
+                    <option value="todo">✅ 待办</option>
+                    <option value="someday">💭 将来也许</option>
+                    <option value="trash">🗑️ 垃圾箱</option>
                   </select>
                 </div>
                 <div>

@@ -646,6 +646,10 @@ def update_task(
         t.actual_pomodoros = data['actual_pomodoros']
     if 'project_id' in data:
         t.project_id = data['project_id']
+    if 'task_type' in data and data['task_type']:
+        t.task_type = TaskType(data['task_type'])
+        # 同步更新 is_inbox 字段
+        t.is_inbox = 1 if data['task_type'] == 'inbox' else 0
     
     db.commit()
     db.refresh(t)
