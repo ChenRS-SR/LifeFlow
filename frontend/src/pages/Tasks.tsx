@@ -9,7 +9,7 @@ import { format, startOfWeek, endOfWeek, eachDayOfInterval, isSameDay, isToday, 
 import { taskAPI, projectAPI } from '../services/api';
 
 type ViewType = 'inbox' | 'today' | 'week' | 'overdue' | 'todo' | 'completed' | 'someday' | 'trash' | 'detail' | 'project';
-type ProjectTaskFilter = 'all' | 'pending' | 'completed';
+type ProjectTaskFilter = 'all' | 'pending' | 'overdue' | 'completed';
 
 interface Task {
   id: number;
@@ -925,12 +925,34 @@ export default function Tasks() {
 
   const renderProjectView = () => {
     if (!selectedProject) return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
     let filteredTasks = tasks;
     if (projectTaskFilter === 'pending') {
-      filteredTasks = tasks.filter(t => t.status !== 'completed');
+      // 进行中：未逾期且未完成（当前日期 <= 截止日期）
+      filteredTasks = tasks.filter(t => {
+        if (t.status === 'completed') return false;
+        if (!t.due_date) return true; // 无截止日期的视为进行中
+        const dueDate = new Date(t.due_date);
+        dueDate.setHours(0, 0, 0, 0);
+        return dueDate >= today;
+      });
+    } else if (projectTaskFilter === 'overdue') {
+      // 已逾期：已逾期且未完成（当前日期 > 截止日期）
+      filteredTasks = tasks.filter(t => {
+        if (t.status === 'completed') return false;
+        if (!t.due_date) return false;
+        const dueDate = new Date(t.due_date);
+        dueDate.setHours(0, 0, 0, 0);
+        return dueDate < today;
+      });
     } else if (projectTaskFilter === 'completed') {
       filteredTasks = tasks.filter(t => t.status === 'completed');
     }
+    
+    // 按重要程度排序（priority 降序：4最高 -> 1最低）
+    filteredTasks = filteredTasks.sort((a, b) => b.priority - a.priority);
     const statusConfig = PROJECT_STATUS_CONFIG[selectedProject.status] || PROJECT_STATUS_CONFIG.active;
     
     return (
@@ -1080,7 +1102,7 @@ export default function Tasks() {
           <div className="flex items-center gap-2 mb-4">
             <h3 className="text-sm font-medium text-gray-900">项目任务</h3>
             <div className="flex-1" />
-            {(['all', 'pending', 'completed'] as const).map((filter) => (
+            {(['all', 'pending', 'overdue', 'completed'] as const).map((filter) => (
               <button
                 key={filter}
                 onClick={() => setProjectTaskFilter(filter)}
@@ -1088,7 +1110,7 @@ export default function Tasks() {
                   projectTaskFilter === filter ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-100'
                 }`}
               >
-                {filter === 'all' ? '全部' : filter === 'pending' ? '进行中' : '已完成'}
+                {filter === 'all' ? '全部' : filter === 'pending' ? '进行中' : filter === 'overdue' ? '已逾期' : '已完成'}
               </button>
             ))}
           </div>
