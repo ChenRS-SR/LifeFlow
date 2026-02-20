@@ -417,13 +417,19 @@ def create_goal(
         quarter=goal.get("quarter"),
         month=goal.get("month"),
         area=goal.get("area"),
-        status=GoalStatus.ACTIVE,
-        progress=0.0
+        status=GoalStatus.ACTIVE if (goal.get("progress") or 0) < 100 else GoalStatus.COMPLETED,
+        progress=float(goal.get("progress") or 0),
+        project_id=goal.get("project_id")
     )
     db.add(db_goal)
     db.commit()
     db.refresh(db_goal)
-    return {"id": db_goal.id, "title": db_goal.title}
+    return {
+        "id": db_goal.id, 
+        "title": db_goal.title,
+        "progress": db_goal.progress,
+        "project_id": db_goal.project_id,
+    }
 
 @app.put("/api/goals/{goal_id}")
 def update_goal(
@@ -439,10 +445,24 @@ def update_goal(
     g.title = goal.get("title", g.title)
     g.description = goal.get("description", g.description)
     g.status = goal.get("status", g.status)
+    g.progress = goal.get("progress", g.progress)
+    g.area = goal.get("area", g.area)
+    g.project_id = goal.get("project_id", g.project_id)
+    
+    # 如果进度达到100%，自动标记为已完成
+    if g.progress >= 100 and g.status == "active":
+        g.status = "completed"
     
     db.commit()
     db.refresh(g)
-    return {"id": g.id, "title": g.title}
+    return {
+        "id": g.id, 
+        "title": g.title,
+        "progress": g.progress,
+        "status": g.status,
+        "area": g.area,
+        "project_id": g.project_id,
+    }
 
 @app.delete("/api/goals/{goal_id}")
 def delete_goal(goal_id: int, db: Session = Depends(get_db)):

@@ -50,12 +50,16 @@ class Goal(Base):
     status = Column(Enum(GoalStatus), default=GoalStatus.ACTIVE)
     progress = Column(Float, default=0.0)      # 完成进度 0-100
     
+    # 关联项目（可选）
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=True)
+    
     # 时间戳
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     # 关联关系
     user = relationship("User", back_populates="goals")
+    project = relationship("Project", back_populates="goals")
     key_results = relationship("KeyResult", back_populates="goal", cascade="all, delete-orphan")
 
 
