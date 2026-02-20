@@ -11,7 +11,7 @@ class TaskBase(BaseModel):
     """任务基础模型"""
     title: str
     description: Optional[str] = None
-    task_type: TaskType = TaskType.TASK
+    task_type: TaskType = TaskType.INBOX
     project_id: Optional[int] = None
     goal_id: Optional[int] = None
     priority: TaskPriority = TaskPriority.MEDIUM

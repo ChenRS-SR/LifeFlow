@@ -48,7 +48,7 @@ class Task(Base):
     description = Column(Text, nullable=True)
     
     # 任务类型和状态
-    task_type = Column(Enum(TaskType), default=TaskType.TASK)
+    task_type = Column(Enum(TaskType), default=TaskType.INBOX)
     status = Column(Enum(TaskStatus), default=TaskStatus.PENDING)
     priority = Column(Enum(TaskPriority), default=TaskPriority.MEDIUM)
     

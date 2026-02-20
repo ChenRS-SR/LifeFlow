@@ -393,7 +393,7 @@ def delete_goal(goal_id: int, db: Session = Depends(get_db)):
 class TaskCreate(BaseModel):
     title: str
     description: Optional[str] = None
-    task_type: str = "task"
+    task_type: str = "inbox"
     priority: int = 2
     due_date: Optional[str] = None
     scheduled_date: Optional[str] = None
@@ -588,7 +588,7 @@ def create_task(task: TaskCreate, db: Session = Depends(get_db)):
         user_id=1,
         title=task.title,
         description=task.description,
-        task_type=TaskType(task.task_type) if task.task_type else TaskType.TASK,
+        task_type=TaskType(task.task_type) if task.task_type else TaskType.INBOX,
         status=TaskStatus.PENDING,
         priority=task_priority,
         due_date=parse_date(task.due_date),
