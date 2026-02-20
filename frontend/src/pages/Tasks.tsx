@@ -1002,31 +1002,33 @@ export default function Tasks() {
           </button>
         </div>
         
-        {/* 项目目标/里程碑 */}
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm font-medium text-gray-900 flex items-center gap-2">
-                <CheckSquare className="w-4 h-4 text-blue-500" />
-                项目目标 / 里程碑
-              </h3>
-              <span className="text-[10px] text-gray-400" title="按住目标可拖拽排序">💡拖拽排序</span>
+        {/* 项目目标和项目任务 - 左右分栏布局 */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* 左侧：项目目标/里程碑 (占1/3) */}
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-medium text-gray-900 flex items-center gap-2">
+                  <CheckSquare className="w-4 h-4 text-blue-500" />
+                  项目目标
+                </h3>
+                <span className="text-[10px] text-gray-400" title="按住目标可拖拽排序">💡拖拽</span>
+              </div>
+              <button 
+                onClick={() => openGoalModal()} 
+                className="flex items-center gap-1 text-xs px-2 py-1 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100"
+              >
+                <Plus className="w-3 h-3" />
+                添加
+              </button>
             </div>
-            <button 
-              onClick={() => openGoalModal()} 
-              className="flex items-center gap-1 text-xs px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100"
-            >
-              <Plus className="w-3 h-3" />
-              添加目标
-            </button>
-          </div>
-          
-          {projectGoals.length === 0 ? (
-            <div className="text-center py-8 text-gray-400 text-sm bg-gray-50 rounded-lg">
-              暂无目标，点击上方按钮添加项目里程碑
-            </div>
-          ) : (
-            <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+            
+            {projectGoals.length === 0 ? (
+              <div className="text-center py-8 text-gray-400 text-sm bg-gray-50 rounded-lg">
+                暂无目标
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
               {projectGoals.map((goal, index) => (
                 <div 
                   key={goal.id} 
@@ -1097,29 +1099,30 @@ export default function Tasks() {
           )}
         </div>
 
-        {/* 项目任务 */}
-        <div>
-          <div className="flex items-center gap-2 mb-4">
-            <h3 className="text-sm font-medium text-gray-900">项目任务</h3>
-            <div className="flex-1" />
-            {(['all', 'pending', 'overdue', 'completed'] as const).map((filter) => (
-              <button
-                key={filter}
-                onClick={() => setProjectTaskFilter(filter)}
-                className={`px-3 py-1.5 rounded-lg text-sm ${
-                  projectTaskFilter === filter ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-100'
-                }`}
-              >
-                {filter === 'all' ? '全部' : filter === 'pending' ? '进行中' : filter === 'overdue' ? '已逾期' : '已完成'}
-              </button>
-            ))}
-          </div>
-          <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
-            {filteredTasks.length === 0 ? (
-              <div className="text-center py-12 text-gray-500 bg-gray-50 rounded-xl">该项目暂无任务</div>
-            ) : (
-              filteredTasks.map(renderTaskCard)
-            )}
+          {/* 右侧：项目任务 (占2/3) */}
+          <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 p-4">
+            <div className="flex items-center gap-2 mb-4">
+              <h3 className="text-sm font-medium text-gray-900">项目任务</h3>
+              <div className="flex-1" />
+              {(['all', 'pending', 'overdue', 'completed'] as const).map((filter) => (
+                <button
+                  key={filter}
+                  onClick={() => setProjectTaskFilter(filter)}
+                  className={`px-3 py-1.5 rounded-lg text-sm ${
+                    projectTaskFilter === filter ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  {filter === 'all' ? '全部' : filter === 'pending' ? '进行中' : filter === 'overdue' ? '已逾期' : '已完成'}
+                </button>
+              ))}
+            </div>
+            <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
+              {filteredTasks.length === 0 ? (
+                <div className="text-center py-12 text-gray-500 bg-gray-50 rounded-xl">该项目暂无任务</div>
+              ) : (
+                filteredTasks.map(renderTaskCard)
+              )}
+            </div>
           </div>
         </div>
       </div>
