@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>API 测试</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        button { padding: 10px 20px; margin: 10px 0; cursor: pointer; }
+        pre { background: #f5f5f5; padding: 10px; border-radius: 5px; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <h1>API 连接测试</h1>
+    <button onclick="test1()">测试1: 简单POST</button>
+    <button onclick="test2()">测试2: 带数据的POST</button>
+    <button onclick="test3()">测试3: 和test2一样但不用变量</button>
+    <pre id="result">点击按钮开始测试...</pre>
+
+    <script>
+        const result = document.getElementById('result');
+        function log(msg) { result.textContent += '\n' + msg; }
+        
+        async function test1() {
+            result.textContent = '测试1: 简单POST...';
+            try {
+                const res = await fetch('http://127.0.0.1:8000/api/auth/register', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: '{}'
+                });
+                log('状态: ' + res.status);
+            } catch (err) {
+                log('错误: ' + err.message);
+            }
+        }
+        
+        async function test2() {
+            log('\n测试2: 带数据的POST...');
+            const data = { username: 'test' + Date.now(), password: '123456' };
+            log('发送数据: ' + JSON.stringify(data));
+            
+            try {
+                const res = await fetch('http://127.0.0.1:8000/api/auth/register', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(data)
+                });
+                log('状态: ' + res.status);
+                const text = await res.text();
+                log('返回: ' + text);
+            } catch (err) {
+                log('错误: ' + err.message);
+                log('这可能是CORS问题或后端崩溃');
+            }
+        }
+        
+        async function test3() {
+            log('\n测试3: 不用变量...');
+            try {
+                const res = await fetch('http://127.0.0.1:8000/api/auth/register', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: '{"username":"user123","password":"123456"}'
+                });
+                log('状态: ' + res.status);
+                const text = await res.text();
+                log('返回: ' + text);
+            } catch (err) {
+                log('错误: ' + err.message);
+            }
+        }
+    </script>
+</body>
+</html>

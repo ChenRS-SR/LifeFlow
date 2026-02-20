@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<body>
+<h1>最终测试</h1>
+<button onclick="testShort()">短字段名</button>
+<button onclick="testLong()">长字段名</button>
+<button onclick="testXHR()">用 XHR</button>
+<pre id="r"></pre>
+
+<script>
+const url = 'http://127.0.0.1:8000/api/auth/register';
+const h = {'Content-Type': 'application/json'};
+
+function log(s) { document.getElementById('r').textContent += '\n' + s; }
+
+// 短字段名
+function testShort() {
+    log('\n短字段名...');
+    fetch(url, {method: 'POST', headers: h, body: '{"u":"a","p":"b"}'})
+    .then(r => log('OK:' + r.status))
+    .catch(e => log('ERR:' + e.message));
+}
+
+// 长字段名
+function testLong() {
+    log('\n长字段名...');
+    fetch(url, {method: 'POST', headers: h, body: '{"username":"a","password":"b"}'})
+    .then(r => log('OK:' + r.status))
+    .catch(e => log('ERR:' + e.message));
+}
+
+// 用 XHR
+function testXHR() {
+    log('\n用 XHR...');
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url, true);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.onload = () => log('XHR OK:' + xhr.status);
+    xhr.onerror = () => log('XHR ERR');
+    xhr.send('{"username":"a","password":"b"}');
+}
+</script>
+</body>
+</html>

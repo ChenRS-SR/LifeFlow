@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>登录测试</title>
+</head>
+<body>
+    <h1>登录测试</h1>
+    <button onclick="test1()">测试1: 直接fetch</button>
+    <button onclick="test2()">测试2: XHR请求</button>
+    <button onclick="test3()">测试3: 图片请求</button>
+    <pre id="result"></pre>
+
+    <script>
+        const result = document.getElementById('result');
+        function log(s) { result.textContent += '\n' + s; }
+
+        // 测试1: fetch
+        async function test1() {
+            log('\n=== 测试1: Fetch ===');
+            try {
+                const formData = new URLSearchParams();
+                formData.append('username', 'admin');
+                formData.append('password', 'admin123');
+
+                const res = await fetch('http://127.0.0.1:8000/api/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: formData.toString()
+                });
+                log('状态: ' + res.status);
+                const text = await res.text();
+                log('返回: ' + text);
+            } catch (e) {
+                log('错误: ' + e.name + ': ' + e.message);
+            }
+        }
+
+        // 测试2: XHR
+        function test2() {
+            log('\n=== 测试2: XHR ===');
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', 'http://127.0.0.1:8000/api/auth/login', true);
+            xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+            xhr.onload = function() {
+                log('状态: ' + xhr.status);
+                log('返回: ' + xhr.responseText);
+            };
+            xhr.onerror = function() {
+                log('XHR错误');
+            };
+            xhr.send('username=admin&password=admin123');
+        }
+
+        // 测试3: 图片GET（绕过CORS）
+        function test3() {
+            log('\n=== 测试3: 图片GET测试 ===');
+            const img = new Image();
+            img.onload = () => log('图片加载成功（GET工作）');
+            img.onerror = () => log('图片加载失败');
+            img.src = 'http://127.0.0.1:8000/health?' + Date.now();
+        }
+    </script>
+</body>
+</html>

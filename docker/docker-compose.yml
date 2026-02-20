@@ -1,0 +1,57 @@
+# Docker Compose 配置
+# 一键启动：docker-compose up -d
+
+version: '3.8'
+
+services:
+  # PostgreSQL 数据库
+  db:
+    image: postgres:15-alpine
+    container_name: lifeflow-db
+    restart: always
+    environment:
+      POSTGRES_USER: lifeflow_user
+      POSTGRES_PASSWORD: lifeflow_pass
+      POSTGRES_DB: lifeflow
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lifeflow_user -d lifeflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 后端 API 服务
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: lifeflow-backend
+    restart: always
+    environment:
+      DATABASE_URL: postgresql://lifeflow_user:lifeflow_pass@db:5432/lifeflow
+      SECRET_KEY: ${SECRET_KEY:-your-secret-key-change-in-production}
+      DEBUG: "false"
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # 前端静态服务（Nginx）
+  frontend:
+    image: nginx:alpine
+    container_name: lifeflow-frontend
+    restart: always
+    volumes:
+      - ../frontend/dist:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
