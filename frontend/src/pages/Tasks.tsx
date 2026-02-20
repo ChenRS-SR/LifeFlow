@@ -314,6 +314,7 @@ export default function Tasks() {
     setEditForm({
       title: task.title,
       description: task.description,
+      task_type: task.task_type,
       priority: task.priority,
       due_date: task.due_date,
       scheduled_date: task.scheduled_date,
