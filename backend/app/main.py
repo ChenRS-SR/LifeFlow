@@ -1178,6 +1178,97 @@ def init_default_data():
             
             db.commit()
             print(f"[INIT] 创建 {len(default_habits)} 个默认习惯")
+        
+        # 创建随机测试任务（30条左右）
+        existing_tasks = db.query(models.Task).filter(models.Task.user_id == user.id).first()
+        if not existing_tasks:
+            import random
+            from datetime import date, timedelta
+            
+            # 任务标题库
+            task_titles = [
+                "完成项目需求文档", "参加周会", "修复登录bug", "优化数据库查询",
+                "学习Python新特性", "阅读技术文章", "整理桌面文件", "备份重要数据",
+                "更新软件版本", "配置开发环境", "写单元测试", "Code Review",
+                "部署到生产环境", "写周报", "客户沟通", "需求评审",
+                "设计数据库表结构", "画流程图", "研究新技术", "整理笔记",
+                "买生活用品", "预约体检", "还信用卡", "订机票",
+                "准备演讲PPT", "团队聚餐", "整理照片", "学习外语",
+                "健身锻炼", "看电影", "听音乐放松", "整理书架"
+            ]
+            
+            # 任务类型
+            task_types = [TaskType.SCHEDULE, TaskType.TODO, TaskType.SOMEDAY, TaskType.INBOX]
+            
+            # 优先级
+            priorities = [TaskPriority.LOW, TaskPriority.MEDIUM, TaskPriority.HIGH, TaskPriority.URGENT]
+            
+            # 2月日期范围
+            feb_start = date(2026, 2, 1)
+            feb_end = date(2026, 2, 28)
+            feb_days = (feb_end - feb_start).days + 1
+            
+            num_tasks = random.randint(28, 32)  # 30条左右
+            created_count = 0
+            
+            for i in range(num_tasks):
+                title = random.choice(task_titles)
+                # 偶尔添加序号区分
+                if random.random() > 0.7:
+                    title = f"{title} #{i+1}"
+                
+                task_type = random.choice(task_types)
+                priority = random.choice(priorities)
+                
+                # 截止日期：70%概率有，30%概率为空
+                if random.random() > 0.3:
+                    due_date = feb_start + timedelta(days=random.randint(0, feb_days - 1))
+                else:
+                    due_date = None
+                
+                # 计划日期：50%概率有，50%概率为空
+                if random.random() > 0.5:
+                    scheduled_date = feb_start + timedelta(days=random.randint(0, feb_days - 1))
+                else:
+                    scheduled_date = None
+                
+                # 预估番茄钟：30%概率有
+                if random.random() > 0.7:
+                    estimated_pomodoros = random.randint(1, 8)
+                else:
+                    estimated_pomodoros = None
+                
+                # 任务状态：大部分未完成，小部分已完成
+                rand = random.random()
+                if rand > 0.8:
+                    status = TaskStatus.COMPLETED
+                    completed_at = datetime.now() - timedelta(days=random.randint(1, 10))
+                elif rand > 0.6:
+                    status = TaskStatus.IN_PROGRESS
+                    completed_at = None
+                else:
+                    status = TaskStatus.PENDING
+                    completed_at = None
+                
+                task = models.Task(
+                    user_id=user.id,
+                    title=title,
+                    description=f"这是{title}的详细描述" if random.random() > 0.5 else None,
+                    task_type=task_type,
+                    status=status,
+                    priority=priority,
+                    due_date=due_date,
+                    scheduled_date=scheduled_date,
+                    estimated_pomodoros=estimated_pomodoros,
+                    actual_pomodoros=random.randint(1, estimated_pomodoros + 2) if estimated_pomodoros and status == TaskStatus.COMPLETED else None,
+                    is_inbox=1 if task_type == TaskType.INBOX else 0,
+                    completed_at=completed_at
+                )
+                db.add(task)
+                created_count += 1
+            
+            db.commit()
+            print(f"[INIT] 创建 {created_count} 个随机测试任务")
     finally:
         db.close()
 
