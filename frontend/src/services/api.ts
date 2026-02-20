@@ -121,6 +121,10 @@ export const projectAPI = {
   
   toggleGoal: (projectId: number, goalId: number) =>
     apiClient.post(`/api/projects/${projectId}/goals/${goalId}/toggle`),
+  
+  // 批量更新目标排序
+  reorderGoals: (projectId: number, goalIds: number[]) =>
+    apiClient.post(`/api/projects/${projectId}/goals/reorder`, { goal_ids: goalIds }),
 };
 
 // ==================== 任务 API ====================

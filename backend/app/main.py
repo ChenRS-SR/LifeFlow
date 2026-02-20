@@ -1221,6 +1221,35 @@ def toggle_project_goal(
     }
 
 
+class ReorderGoalsRequest(BaseModel):
+    goal_ids: List[int]
+
+@app.post("/api/projects/{project_id}/goals/reorder")
+def reorder_project_goals(
+    project_id: int,
+    req: ReorderGoalsRequest,
+    db: Session = Depends(get_db)
+):
+    """批量更新目标排序"""
+    # 验证项目存在
+    project = db.query(models.Project).filter(models.Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    
+    # 更新每个目标的排序
+    for index, goal_id in enumerate(req.goal_ids):
+        goal = db.query(models.ProjectGoal).filter(
+            models.ProjectGoal.id == goal_id,
+            models.ProjectGoal.project_id == project_id
+        ).first()
+        if goal:
+            goal.sort_order = index
+    
+    db.commit()
+    
+    return {"message": "排序已更新"}
+
+
 # ==================== 初始化 ====================
 def init_default_data():
     """初始化默认数据"""

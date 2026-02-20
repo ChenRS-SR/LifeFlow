@@ -217,10 +217,15 @@ export default function Tasks() {
     setLoading(true);
     try {
       if (currentView === 'project' && selectedProject) {
-        const tasksRes = await taskAPI.list('all');
+        const [tasksRes, projectRes] = await Promise.all([
+          taskAPI.list('all'),
+          projectAPI.get(selectedProject.id)
+        ]);
         const projectTasks = tasksRes.data?.filter((t: Task) => t.project_id === selectedProject.id) || [];
         setAllTasks(projectTasks);
         setTasks(projectTasks);
+        // 更新选中项目的最新数据（包括大纲）
+        setSelectedProject(projectRes.data);
       } else {
         const [tasksRes, projectsRes] = await Promise.all([
           taskAPI.list(currentView === 'detail' || currentView === 'week' ? 'all' : currentView),
@@ -262,9 +267,18 @@ export default function Tasks() {
     }
   };
 
-  const openOutline = () => {
+  const openOutline = async () => {
     if (!selectedProject) return;
-    setOutlineContent(selectedProject.outline || '');
+    // 重新获取项目最新数据，确保大纲内容是最新的
+    try {
+      const res = await projectAPI.get(selectedProject.id);
+      const latestProject = res.data;
+      setSelectedProject(latestProject);
+      setOutlineContent(latestProject.outline || '');
+    } catch (err) {
+      // 如果获取失败，使用当前数据
+      setOutlineContent(selectedProject.outline || '');
+    }
     setShowOutlineModal(true);
   };
 
@@ -530,7 +544,7 @@ export default function Tasks() {
     setDragOverGoalIndex(index);
   };
 
-  const handleGoalDrop = (e: React.DragEvent, dropIndex: number) => {
+  const handleGoalDrop = async (e: React.DragEvent, dropIndex: number) => {
     e.preventDefault();
     const target = e.currentTarget as HTMLElement;
     target.style.opacity = '1';
@@ -550,8 +564,14 @@ export default function Tasks() {
     setDraggedGoalIndex(null);
     setDragOverGoalIndex(null);
 
-    // TODO: 调用 API 保存排序顺序（如果需要持久化）
-    // await projectAPI.reorderGoals(selectedProject!.id, newGoals.map(g => g.id));
+    // 调用 API 保存排序顺序
+    if (selectedProject) {
+      try {
+        await projectAPI.reorderGoals(selectedProject.id, newGoals.map(g => g.id));
+      } catch (err) {
+        console.error('保存排序失败:', err);
+      }
+    }
   };
 
   const handleGoalDragEnd = (e: React.DragEvent) => {
