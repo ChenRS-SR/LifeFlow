@@ -1285,56 +1285,56 @@ export default function Tasks() {
                   {dayTasks.map(task => (
                     <div 
                       key={task.id} 
-                      className={`text-xs p-2.5 rounded-lg border cursor-pointer transition-all ${
+                      className={`text-xs p-2 rounded-lg border cursor-pointer transition-all overflow-hidden ${
                         task.status === 'completed' 
                           ? 'bg-gray-50 border-gray-200 opacity-50' 
                           : `${PRIORITY_CONFIG[task.priority].bg} ${PRIORITY_CONFIG[task.priority].border} hover:shadow-md`
                       }`}
                     >
                       {/* 第一行：勾选框 + 标题 */}
-                      <div className="flex items-start gap-2">
+                      <div className="flex items-start gap-1.5">
                         <button 
                           onClick={(e) => { e.stopPropagation(); handleCompleteClick(task); }}
-                          className={`flex-shrink-0 w-5 h-5 rounded border flex items-center justify-center transition-colors mt-0.5 ${
+                          className={`flex-shrink-0 w-4 h-4 rounded border flex items-center justify-center transition-colors mt-0.5 ${
                             task.status === 'completed' 
                               ? 'bg-emerald-500 border-emerald-500' 
                               : 'border-gray-300 hover:border-emerald-500 bg-white'
                           }`}
                         >
-                          {task.status === 'completed' && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
+                          {task.status === 'completed' && <CheckCircle2 className="w-3 h-3 text-white" />}
                         </button>
                         <div 
                           onClick={() => openTaskDetail(task)}
                           className={`flex-1 min-w-0 ${task.status === 'completed' ? 'line-through text-gray-400' : 'text-gray-800'}`}
                         >
-                          <div className="font-medium leading-tight mb-1.5">{task.title}</div>
+                          <div className="font-medium leading-tight mb-1 truncate">{task.title}</div>
                           
                           {/* 第二行：类型 + 优先级标签 */}
-                          <div className="flex flex-wrap gap-1 mb-1.5">
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${TASK_TYPE_CONFIG[task.task_type]?.bg || 'bg-gray-100'}`}>
+                          <div className="flex flex-wrap gap-1 mb-1">
+                            <span className={`text-[10px] px-1 py-0.5 rounded ${TASK_TYPE_CONFIG[task.task_type]?.bg || 'bg-gray-100'}`}>
                               {TASK_TYPE_CONFIG[task.task_type]?.icon}
                             </span>
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${PRIORITY_CONFIG[task.priority].bg} ${PRIORITY_CONFIG[task.priority].color}`}>
+                            <span className={`text-[10px] px-1 py-0.5 rounded ${PRIORITY_CONFIG[task.priority].bg} ${PRIORITY_CONFIG[task.priority].color}`}>
                               {PRIORITY_CONFIG[task.priority].label}
                             </span>
                             {task.status === 'completed' && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-600">已完成</span>
+                              <span className="text-[10px] px-1 py-0.5 rounded bg-emerald-100 text-emerald-600">已完成</span>
                             )}
                           </div>
                           
-                          {/* 第三行：项目 + 番茄钟 */}
-                          <div className="flex items-center gap-1.5 text-[10px] text-gray-500">
+                          {/* 第三行：项目 + 番茄钟 + 截止日期 - 使用flex-wrap防止溢出 */}
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-gray-500">
                             {task.project_name && (
-                              <span className="flex items-center gap-0.5 text-gray-400">
-                                <Folder className="w-3 h-3" />
-                                <span className="truncate max-w-[60px]">{task.project_name}</span>
+                              <span className="flex items-center gap-0.5 text-gray-400 truncate max-w-[70px]">
+                                <Folder className="w-3 h-3 flex-shrink-0" />
+                                <span className="truncate">{task.project_name}</span>
                               </span>
                             )}
                             {task.estimated_pomodoros && (
-                              <span className="text-orange-500">🍅{task.estimated_pomodoros}</span>
+                              <span className="text-orange-500 whitespace-nowrap">🍅{task.estimated_pomodoros}</span>
                             )}
                             {task.due_date && !isSameDay(parseISO(task.due_date), day) && (
-                              <span className="text-red-400">截止{format(parseISO(task.due_date), 'MM/dd')}</span>
+                              <span className="text-red-400 whitespace-nowrap">截止{format(parseISO(task.due_date), 'MM/dd')}</span>
                             )}
                           </div>
                         </div>
