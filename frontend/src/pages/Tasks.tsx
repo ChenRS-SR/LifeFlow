@@ -1103,6 +1103,12 @@ export default function Tasks() {
           <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 p-4">
             <div className="flex items-center gap-2 mb-4">
               <h3 className="text-sm font-medium text-gray-900">项目任务</h3>
+              <span className="text-xs text-gray-500">
+                共 <span className="font-medium text-gray-700">{tasks.length}</span> 个
+                {tasks.filter(t => t.status === 'completed').length > 0 && (
+                  <>, 已完成 <span className="font-medium text-emerald-600">{tasks.filter(t => t.status === 'completed').length}</span> 个</>
+                )}
+              </span>
               <div className="flex-1" />
               {(['all', 'pending', 'overdue', 'completed'] as const).map((filter) => (
                 <button
