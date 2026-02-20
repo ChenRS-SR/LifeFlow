@@ -183,6 +183,13 @@ export default function Tasks() {
     loadData();
   }, [currentView, selectedProject?.id]);
 
+  // 大纲弹窗打开时立即同步内容，避免延迟
+  useEffect(() => {
+    if (showOutlineModal && selectedProject) {
+      setOutlineContent(selectedProject.outline || '');
+    }
+  }, [showOutlineModal, selectedProject]);
+
   // 筛选逻辑
   useEffect(() => {
     if (dateRange.start || dateRange.end) {
@@ -1814,43 +1821,93 @@ export default function Tasks() {
         </div>
       )}
       
-      {/* 大纲编辑弹窗 */}
+      {/* 大纲编辑弹窗 - 优化版：左右分栏，实时预览 */}
       {showOutlineModal && selectedProject && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl w-full max-w-2xl p-6 max-h-[80vh] flex flex-col">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                <BookOpen className="w-5 h-5" />
-                项目大纲
-              </h2>
-              <button onClick={() => setShowOutlineModal(false)} className="text-gray-400 hover:text-gray-600">
-                <X className="w-5 h-5" />
-              </button>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-5xl h-[85vh] flex flex-col">
+            {/* 头部 */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                  <BookOpen className="w-5 h-5 text-purple-600" />
+                  项目大纲
+                  <span className="text-sm font-normal text-gray-500">- {selectedProject.name}</span>
+                </h2>
+                <p className="text-xs text-gray-500 mt-1">左侧编辑 Markdown，右侧实时预览。支持 # 标题、- 列表、**粗体** 等语法。</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => setOutlineContent('')}
+                  className="px-3 py-1.5 text-xs text-gray-600 hover:text-red-600 hover:bg-red-50 rounded"
+                  title="清空内容"
+                >
+                  清空
+                </button>
+                <button onClick={() => setShowOutlineModal(false)} className="text-gray-400 hover:text-gray-600 p-1">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
-            <p className="text-sm text-gray-500 mb-3">记录项目的目标、里程碑、注意事项等</p>
-            <textarea
-              value={outlineContent}
-              onChange={(e) => setOutlineContent(e.target.value)}
-              placeholder="# 项目大纲
-
-## 项目目标
-- 
-
-## 里程碑
-1. 
-
-## 注意事项
-- 
-"
-              rows={15}
-              className="flex-1 w-full px-4 py-3 border border-gray-300 rounded-lg font-mono text-sm resize-none"
-            />
-            <div className="flex justify-end gap-3 mt-4">
-              <button onClick={() => setShowOutlineModal(false)} className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg">取消</button>
-              <button onClick={saveOutline} className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
-                <Save className="w-4 h-4" />
-                保存大纲
-              </button>
+            
+            {/* 主体：左右分栏 */}
+            <div className="flex-1 flex overflow-hidden">
+              {/* 左侧：编辑器 */}
+              <div className="flex-1 flex flex-col border-r border-gray-200">
+                <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 text-xs text-gray-500 flex items-center justify-between">
+                  <span>📝 Markdown 编辑</span>
+                  <div className="flex gap-1">
+                    <button onClick={() => setOutlineContent(v => v + '# 标题\n')} className="px-2 py-0.5 hover:bg-gray-200 rounded" title="标题">#</button>
+                    <button onClick={() => setOutlineContent(v => v + '- 列表项\n')} className="px-2 py-0.5 hover:bg-gray-200 rounded" title="列表">-</button>
+                    <button onClick={() => setOutlineContent(v => v + '**粗体**')} className="px-2 py-0.5 hover:bg-gray-200 rounded" title="粗体">B</button>
+                  </div>
+                </div>
+                <textarea
+                  value={outlineContent}
+                  onChange={(e) => setOutlineContent(e.target.value)}
+                  placeholder="# 项目大纲\n\n## 项目目标\n- 目标1\n- 目标2\n\n## 里程碑\n1. 第一阶段\n2. 第二阶段\n\n## 注意事项\n- 重要提示\n"
+                  className="flex-1 w-full p-4 font-mono text-sm resize-none focus:outline-none"
+                  spellCheck={false}
+                />
+              </div>
+              
+              {/* 右侧：预览 */}
+              <div className="flex-1 flex flex-col bg-gray-50">
+                <div className="px-4 py-2 bg-gray-100 border-b border-gray-200 text-xs text-gray-500">
+                  👁️ 实时预览
+                </div>
+                <div 
+                  className="flex-1 p-4 overflow-y-auto prose prose-sm max-w-none"
+                  dangerouslySetInnerHTML={{ 
+                    __html: outlineContent 
+                      ? outlineContent
+                          .replace(/^### (.*$)/gim, '<h3 class="text-lg font-bold text-gray-800 mt-4 mb-2">$1</h3>')
+                          .replace(/^## (.*$)/gim, '<h2 class="text-xl font-bold text-gray-900 mt-5 mb-3 border-b border-gray-200 pb-1">$1</h2>')
+                          .replace(/^# (.*$)/gim, '<h1 class="text-2xl font-bold text-gray-900 mt-4 mb-4">$1</h1>')
+                          .replace(/^\*\*\*(.*?)\*\*/gim, '<li class="ml-4 text-gray-700 my-1">$1</li>')
+                          .replace(/^\*\*(.*?)\*\*/gim, '<li class="ml-4 text-gray-700 my-1">$1</li>')
+                          .replace(/\*\*(.*?)\*\*/gim, '<strong class="text-gray-900">$1</strong>')
+                          .replace(/\*(.*?)\*/gim, '<em class="text-gray-600">$1</em>')
+                          .replace(/^\d+\.\s+(.*$)/gim, '<li class="ml-4 text-gray-700 my-1 list-decimal"><span>$1</span></li>')
+                          .replace(/^-\s+(.*$)/gim, '<li class="ml-4 text-gray-700 my-1 list-disc"><span>$1</span></li>')
+                          .replace(/\n/gim, '<br />')
+                      : '<p class="text-gray-400 italic text-center mt-20">开始输入 Markdown 内容，此处将显示预览...</p>'
+                  }}
+                />
+              </div>
+            </div>
+            
+            {/* 底部 */}
+            <div className="flex justify-between items-center px-6 py-4 border-t border-gray-200 bg-gray-50">
+              <div className="text-xs text-gray-500">
+                共 {outlineContent.length} 字符
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setShowOutlineModal(false)} className="px-4 py-2 text-gray-700 hover:bg-gray-200 rounded-lg">取消</button>
+                <button onClick={saveOutline} className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
+                  <Save className="w-4 h-4" />
+                  保存大纲
+                </button>
+              </div>
             </div>
           </div>
         </div>
