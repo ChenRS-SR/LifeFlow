@@ -131,6 +131,10 @@ export default function Tasks() {
   const [editingGoal, setEditingGoal] = useState<ProjectGoal | null>(null);
   const [goalForm, setGoalForm] = useState({ title: '', description: '' });
   
+  // 项目目标拖拽排序状态
+  const [draggedGoalIndex, setDraggedGoalIndex] = useState<number | null>(null);
+  const [dragOverGoalIndex, setDragOverGoalIndex] = useState<number | null>(null);
+  
   // 本周视图状态
   const [weekOffset, setWeekOffset] = useState(0); // 0=本周, -1=上周, 1=下周
   const [showWeekPicker, setShowWeekPicker] = useState(false);
@@ -504,6 +508,52 @@ export default function Tasks() {
     }
   };
 
+  // ==================== 项目目标拖拽排序 ====================
+  const handleGoalDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedGoalIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+    // 设置拖拽时的幽灵图像透明度
+    const target = e.currentTarget as HTMLElement;
+    target.style.opacity = '0.5';
+  };
+
+  const handleGoalDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    if (draggedGoalIndex === null || draggedGoalIndex === index) return;
+    setDragOverGoalIndex(index);
+  };
+
+  const handleGoalDrop = (e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+    const target = e.currentTarget as HTMLElement;
+    target.style.opacity = '1';
+    
+    if (draggedGoalIndex === null || draggedGoalIndex === dropIndex) {
+      setDraggedGoalIndex(null);
+      setDragOverGoalIndex(null);
+      return;
+    }
+
+    // 重新排序目标列表
+    const newGoals = [...projectGoals];
+    const [removed] = newGoals.splice(draggedGoalIndex, 1);
+    newGoals.splice(dropIndex, 0, removed);
+    
+    setProjectGoals(newGoals);
+    setDraggedGoalIndex(null);
+    setDragOverGoalIndex(null);
+
+    // TODO: 调用 API 保存排序顺序（如果需要持久化）
+    // await projectAPI.reorderGoals(selectedProject!.id, newGoals.map(g => g.id));
+  };
+
+  const handleGoalDragEnd = (e: React.DragEvent) => {
+    const target = e.currentTarget as HTMLElement;
+    target.style.opacity = '1';
+    setDraggedGoalIndex(null);
+    setDragOverGoalIndex(null);
+  };
+
   // ==================== 渲染组件 ====================
   const renderTaskCard = (task: Task) => (
     <div
@@ -808,10 +858,13 @@ export default function Tasks() {
         {/* 项目目标/里程碑 */}
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-medium text-gray-900 flex items-center gap-2">
-              <CheckSquare className="w-4 h-4 text-blue-500" />
-              项目目标 / 里程碑
-            </h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-medium text-gray-900 flex items-center gap-2">
+                <CheckSquare className="w-4 h-4 text-blue-500" />
+                项目目标 / 里程碑
+              </h3>
+              <span className="text-[10px] text-gray-400" title="按住目标可拖拽排序">💡拖拽排序</span>
+            </div>
             <button 
               onClick={() => openGoalModal()} 
               className="flex items-center gap-1 text-xs px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100"
@@ -826,13 +879,18 @@ export default function Tasks() {
               暂无目标，点击上方按钮添加项目里程碑
             </div>
           ) : (
-            <div className="space-y-2">
-              {projectGoals.map((goal) => (
+            <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+              {projectGoals.map((goal, index) => (
                 <div 
                   key={goal.id} 
-                  className={`flex items-start gap-3 p-3 rounded-lg border transition-colors ${
+                  draggable
+                  onDragStart={(e) => handleGoalDragStart(e, index)}
+                  onDragOver={(e) => handleGoalDragOver(e, index)}
+                  onDrop={(e) => handleGoalDrop(e, index)}
+                  onDragEnd={handleGoalDragEnd}
+                  className={`flex items-start gap-3 p-3 rounded-lg border transition-all cursor-move ${
                     goal.is_completed ? 'bg-gray-50 border-gray-200' : 'bg-white border-gray-200 hover:border-blue-300'
-                  }`}
+                  } ${dragOverGoalIndex === index && draggedGoalIndex !== index ? 'border-blue-400 border-dashed transform scale-[1.02]' : ''}`}
                 >
                   <button
                     onClick={() => toggleGoal(goal)}
@@ -909,7 +967,7 @@ export default function Tasks() {
               </button>
             ))}
           </div>
-          <div className="space-y-2">
+          <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
             {filteredTasks.length === 0 ? (
               <div className="text-center py-12 text-gray-500 bg-gray-50 rounded-xl">该项目暂无任务</div>
             ) : (
