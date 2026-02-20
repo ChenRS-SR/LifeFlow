@@ -908,6 +908,134 @@ export default function Tasks() {
     );
   };
 
+  const renderTodayView = () => {
+    const today = new Date();
+    const todayStr = format(today, 'yyyy年MM月dd日');
+    const weekday = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][today.getDay()];
+    
+    // 按优先级和状态分组
+    const urgentTasks = tasks.filter(t => t.priority === 4 && t.status !== 'completed');
+    const importantTasks = tasks.filter(t => t.priority === 3 && t.status !== 'completed');
+    const normalTasks = tasks.filter(t => [1, 2].includes(t.priority) && t.status !== 'completed');
+    const completedTasks = tasks.filter(t => t.status === 'completed');
+    
+    const pendingCount = urgentTasks.length + importantTasks.length + normalTasks.length;
+    const completedCount = completedTasks.length;
+    const totalCount = tasks.length;
+    const progress = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+    
+    // 按截止时间排序的辅助函数
+    const sortByDueDate = (a: Task, b: Task) => {
+      if (!a.due_date && !b.due_date) return 0;
+      if (!a.due_date) return 1;
+      if (!b.due_date) return -1;
+      return parseISO(a.due_date).getTime() - parseISO(b.due_date).getTime();
+    };
+    
+    const renderTaskSection = (title: string, taskList: Task[], colorClass: string, icon: string) => {
+      if (taskList.length === 0) return null;
+      
+      return (
+        <div className="mb-6">
+          <div className={`flex items-center gap-2 mb-3 px-4 py-2 rounded-lg ${colorClass}`}>
+            <span className="text-lg">{icon}</span>
+            <h3 className="font-medium">{title}</h3>
+            <span className="ml-auto text-sm opacity-70">{taskList.length}个</span>
+          </div>
+          <div className="space-y-2">
+            {[...taskList].sort(sortByDueDate).map(task => (
+              <div key={task.id} onClick={() => openTaskDetail(task)} className="cursor-pointer">
+                {renderTaskCard(task)}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    };
+    
+    return (
+      <div className="max-w-3xl">
+        {/* 今日概览卡片 */}
+        <div className="bg-gradient-to-r from-blue-500 to-indigo-600 rounded-2xl p-6 text-white mb-6">
+          <div className="flex items-start justify-between">
+            <div>
+              <h2 className="text-2xl font-bold">{todayStr}</h2>
+              <p className="text-blue-100 mt-1">{weekday} · 今日待办</p>
+            </div>
+            <div className="text-right">
+              <div className="text-4xl font-bold">{progress}%</div>
+              <div className="text-sm text-blue-100">完成进度</div>
+            </div>
+          </div>
+          
+          <div className="mt-4 h-2 bg-white/20 rounded-full overflow-hidden">
+            <div 
+              className="h-full bg-white rounded-full transition-all duration-500"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+          
+          <div className="mt-4 flex gap-6 text-sm">
+            <div>
+              <span className="text-blue-100">今日任务</span>
+              <span className="ml-2 text-xl font-bold">{totalCount}</span>
+            </div>
+            <div>
+              <span className="text-blue-100">待完成</span>
+              <span className="ml-2 text-xl font-bold">{pendingCount}</span>
+            </div>
+            <div>
+              <span className="text-blue-100">已完成</span>
+              <span className="ml-2 text-xl font-bold">{completedCount}</span>
+            </div>
+          </div>
+        </div>
+        
+        {/* 任务分组 */}
+        {pendingCount === 0 && completedCount === 0 ? (
+          <div className="text-center py-16">
+            <div className="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Calendar className="w-10 h-10 text-blue-400" />
+            </div>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">今天暂无任务</h3>
+            <p className="text-gray-500 text-sm">享受美好的一天，或者新建一个任务开始工作</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {/* 紧急事项 */}
+            {renderTaskSection('🔥 紧急事项', urgentTasks, 'bg-red-50 text-red-700', '🔥')}
+            
+            {/* 重要事项 */}
+            {renderTaskSection('⚠️ 重要事项', importantTasks, 'bg-orange-50 text-orange-700', '⚠️')}
+            
+            {/* 普通待办 */}
+            {renderTaskSection('✅ 普通待办', normalTasks, 'bg-blue-50 text-blue-700', '✅')}
+            
+            {/* 已完成（可折叠） */}
+            {completedCount > 0 && (
+              <div className="mt-8 pt-6 border-t border-gray-200">
+                <details className="group">
+                  <summary className="flex items-center gap-2 cursor-pointer text-gray-500 hover:text-gray-700">
+                    <span className="text-lg">✓</span>
+                    <span className="font-medium">已完成 ({completedCount})</span>
+                    <span className="ml-auto text-xs group-open:rotate-180 transition-transform">▼</span>
+                  </summary>
+                  <div className="mt-3 space-y-2 opacity-60">
+                    {completedTasks.map(task => (
+                      <div key={task.id} onClick={() => openTaskDetail(task)} className="cursor-pointer">
+                        {renderTaskCard(task)}
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderWeekView = () => {
     const today = new Date();
     const weekStart = startOfWeek(today, { weekStartsOn: 1 });
@@ -1039,6 +1167,8 @@ export default function Tasks() {
         <div className="flex-1 overflow-y-auto p-6">
           {loading ? (
             <div className="flex items-center justify-center h-64"><div className="w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin" /></div>
+          ) : currentView === 'today' ? (
+            renderTodayView()
           ) : currentView === 'week' ? (
             renderWeekView()
           ) : currentView === 'detail' ? (
