@@ -424,11 +424,10 @@ def list_tasks(
              ((models.Task.due_date < today) & (models.Task.due_date != None)))
         )
     elif view == "week":
-        # 本周：截止日期或计划日期在本周（未完成的）
+        # 本周：截止日期或计划日期在本周（包含已完成）
         week_start = today - timedelta(days=today.weekday())  # 周一
         week_end = week_start + timedelta(days=6)  # 周日
         query = query.filter(
-            models.Task.status != TaskStatus.COMPLETED,
             models.Task.is_inbox == 0,
             ((models.Task.due_date >= week_start) & (models.Task.due_date <= week_end)) |
             ((models.Task.scheduled_date >= week_start) & (models.Task.scheduled_date <= week_end))
