@@ -1,4 +1,4 @@
-version: '3.8'
+version: '3.3'
 
 services:
   # 前端服务
@@ -36,7 +36,7 @@ services:
 
   # Nginx 反向代理
   nginx:
-    image: nginx:alpine
+    image: registry.cn-hangzhou.aliyuncs.com/google_containers/nginx:alpine
     container_name: lifeflow-nginx
     restart: always
     ports:
@@ -56,7 +56,7 @@ services:
 
   # Certbot SSL证书自动续期（可选）
   certbot:
-    image: certbot/certbot
+    image: registry.cn-hangzhou.aliyuncs.com/chenshaoju/certbot
     container_name: lifeflow-certbot
     volumes:
       - ./certbot/conf:/etc/letsencrypt

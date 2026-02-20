@@ -1,5 +1,5 @@
 # 使用 Python 3.11 轻量级镜像
-FROM python:3.11-slim
+FROM registry.cn-hangzhou.aliyuncs.com/python:3.11-slim
 
 # 设置工作目录
 WORKDIR /app

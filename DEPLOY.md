@@ -479,6 +479,12 @@ cd /opt/LifeFlow/docker
 mkdir -p data certbot/conf certbot/www
 
 # 2. 构建并启动
+# 先手动拉取基础镜像
+docker pull python:3.11-slim
+docker pull node:18-alpine
+docker pull nginx:alpine
+
+# 然后再构建
 docker-compose up -d --build
 
 # 3. 查看状态
