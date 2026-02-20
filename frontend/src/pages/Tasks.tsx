@@ -3,7 +3,7 @@ import {
   Plus, Calendar, Inbox, CheckCircle2, Circle, Clock, AlertCircle, 
   Folder, List, Edit3, 
   X, Filter, Settings, Trash2, Save, BookOpen,
-  ArrowLeft, CheckSquare
+  ArrowLeft, CheckSquare, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { format, startOfWeek, endOfWeek, eachDayOfInterval, isSameDay, isToday, isPast, parseISO, isWithinInterval } from 'date-fns';
 import { taskAPI, projectAPI } from '../services/api';
@@ -128,6 +128,11 @@ export default function Tasks() {
   const [showGoalModal, setShowGoalModal] = useState(false);
   const [editingGoal, setEditingGoal] = useState<ProjectGoal | null>(null);
   const [goalForm, setGoalForm] = useState({ title: '', description: '' });
+  
+  // 本周视图状态
+  const [weekOffset, setWeekOffset] = useState(0); // 0=本周, -1=上周, 1=下周
+  const [showWeekPicker, setShowWeekPicker] = useState(false);
+  const [weekPickerDate, setWeekPickerDate] = useState('');
   
   // 筛选状态
   const [showFilterPanel, setShowFilterPanel] = useState(false);
@@ -1037,56 +1042,232 @@ export default function Tasks() {
   };
 
   const renderWeekView = () => {
-    const today = new Date();
-    const weekStart = startOfWeek(today, { weekStartsOn: 1 });
-    const weekDays = eachDayOfInterval({ start: weekStart, end: endOfWeek(today, { weekStartsOn: 1 }) });
-    const overdueTasks = tasks.filter(t => t.due_date && isPast(parseISO(t.due_date)) && !isToday(parseISO(t.due_date)) && t.status !== 'completed');
+    const baseDate = new Date();
+    baseDate.setDate(baseDate.getDate() + weekOffset * 7);
+    const weekStart = startOfWeek(baseDate, { weekStartsOn: 1 });
+    const weekEnd = endOfWeek(baseDate, { weekStartsOn: 1 });
+    const weekDays = eachDayOfInterval({ start: weekStart, end: weekEnd });
+    
+    // 获取本周所有任务（包括已完成的），不过滤 completed
     const getTaskDisplayDate = (task: Task): string | null => task.due_date || task.scheduled_date || null;
+    
+    // 逾期任务：截止日期在本周开始之前且未完成的
+    const overdueTasks = tasks.filter(t => {
+      if (!t.due_date) return false;
+      const due = parseISO(t.due_date);
+      return due < weekStart && !isToday(due);
+    });
+    
+    // 本周范围内的任务（包括已完成的）
+    const weekTasks = tasks.filter(t => {
+      const displayDate = getTaskDisplayDate(t);
+      if (!displayDate) return false;
+      const date = parseISO(displayDate);
+      return date >= weekStart && date <= weekEnd;
+    });
+    
+    const isCurrentWeek = weekOffset === 0;
+    const weekNumber = format(weekStart, 'w');
+    
+    // 处理周选择
+    const handleWeekSelect = (dateStr: string) => {
+      if (!dateStr) return;
+      const selected = parseISO(dateStr);
+      const now = new Date();
+      const currentWeekStart = startOfWeek(now, { weekStartsOn: 1 });
+      const selectedWeekStart = startOfWeek(selected, { weekStartsOn: 1 });
+      const diffDays = Math.round((selectedWeekStart.getTime() - currentWeekStart.getTime()) / (1000 * 60 * 60 * 24));
+      const diffWeeks = Math.round(diffDays / 7);
+      setWeekOffset(diffWeeks);
+      setShowWeekPicker(false);
+    };
 
     return (
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-medium text-gray-900">{format(weekStart, 'yyyy年MM月')} 第{format(weekStart, 'w')}周</h3>
+        {/* 周导航栏 */}
+        <div className="flex items-center justify-between bg-white rounded-xl border border-gray-200 p-4">
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={() => setWeekOffset(weekOffset - 1)}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              title="上一周"
+            >
+              <ChevronLeft className="w-5 h-5 text-gray-600" />
+            </button>
+            
+            <div className="text-center min-w-[200px]">
+              <h3 className="text-lg font-bold text-gray-900">
+                {isCurrentWeek ? '本周' : `${format(weekStart, 'MM月dd日')} - ${format(weekEnd, 'MM月dd日')}`}
+              </h3>
+              <p className="text-sm text-gray-500">
+                {format(weekStart, 'yyyy年')} 第{weekNumber}周
+                {isCurrentWeek && <span className="ml-2 text-blue-600 font-medium">(当前)</span>}
+              </p>
+            </div>
+            
+            <button 
+              onClick={() => setWeekOffset(weekOffset + 1)}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              title="下一周"
+            >
+              <ChevronRight className="w-5 h-5 text-gray-600" />
+            </button>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setWeekOffset(0)}
+              disabled={isCurrentWeek}
+              className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                isCurrentWeek 
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
+                  : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+              }`}
+            >
+              回到本周
+            </button>
+            
+            <div className="relative">
+              <button
+                onClick={() => setShowWeekPicker(!showWeekPicker)}
+                className="flex items-center gap-2 px-3 py-1.5 text-sm bg-gray-50 text-gray-700 rounded-lg hover:bg-gray-100"
+              >
+                <Calendar className="w-4 h-4" />
+                选择日期
+              </button>
+              
+              {showWeekPicker && (
+                <div className="absolute right-0 top-full mt-2 bg-white rounded-xl shadow-lg border border-gray-200 p-4 z-50 min-w-[280px]">
+                  <p className="text-sm font-medium text-gray-700 mb-3">选择任意日期跳转到该周</p>
+                  <input
+                    type="date"
+                    value={weekPickerDate}
+                    onChange={(e) => {
+                      setWeekPickerDate(e.target.value);
+                      handleWeekSelect(e.target.value);
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                  <button
+                    onClick={() => setShowWeekPicker(false)}
+                    className="mt-3 w-full px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
+                  >
+                    取消
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
         
+        {/* 任务统计 */}
+        <div className="flex gap-4 text-sm">
+          <div className="px-4 py-2 bg-blue-50 rounded-lg">
+            <span className="text-gray-600">本周任务:</span>
+            <span className="ml-2 font-bold text-blue-600">{weekTasks.length}</span>
+          </div>
+          <div className="px-4 py-2 bg-red-50 rounded-lg">
+            <span className="text-gray-600">逾期:</span>
+            <span className="ml-2 font-bold text-red-600">{overdueTasks.filter(t => t.status !== 'completed').length}</span>
+          </div>
+          <div className="px-4 py-2 bg-emerald-50 rounded-lg">
+            <span className="text-gray-600">已完成:</span>
+            <span className="ml-2 font-bold text-emerald-600">{weekTasks.filter(t => t.status === 'completed').length}</span>
+          </div>
+        </div>
+        
+        {/* 周视图网格 */}
         <div className="grid grid-cols-8 gap-3">
           {/* 逾期任务列 */}
           <div className="min-h-[200px]">
             <div className="text-center py-2 rounded-t-lg bg-red-100">
               <p className="text-xs text-red-600 font-medium">逾期</p>
+              <p className="text-xs text-red-500 mt-0.5">{overdueTasks.length}个</p>
             </div>
-            <div className="p-2 space-y-2 border border-t-0 border-red-200 rounded-b-lg min-h-[160px] bg-red-50/30">
+            <div className="p-2 space-y-2 border border-t-0 border-red-200 rounded-b-lg min-h-[200px] bg-red-50/30">
               {overdueTasks.length === 0 ? (
                 <p className="text-xs text-gray-400 text-center py-4">无逾期</p>
               ) : (
                 overdueTasks.map(task => (
-                  <div key={task.id} onClick={() => openTaskDetail(task)} className="text-xs p-2 rounded border border-red-200 bg-white cursor-pointer">
-                    <div className="font-medium truncate">{task.title}</div>
-                    <span className="text-xs text-red-500">{format(parseISO(task.due_date!), 'MM/dd')}</span>
+                  <div 
+                    key={task.id} 
+                    className={`text-xs p-2 rounded border cursor-pointer transition-all ${
+                      task.status === 'completed' 
+                        ? 'bg-gray-100 border-gray-200 opacity-60' 
+                        : 'bg-white border-red-200 hover:border-red-400'
+                    }`}
+                  >
+                    <div className="flex items-start gap-1.5">
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); handleCompleteClick(task); }}
+                        className={`flex-shrink-0 w-4 h-4 rounded border flex items-center justify-center transition-colors ${
+                          task.status === 'completed' 
+                            ? 'bg-emerald-500 border-emerald-500' 
+                            : 'border-gray-300 hover:border-emerald-500 bg-white'
+                        }`}
+                      >
+                        {task.status === 'completed' && <CheckCircle2 className="w-3 h-3 text-white" />}
+                      </button>
+                      <div 
+                        onClick={() => openTaskDetail(task)}
+                        className={`flex-1 min-w-0 ${task.status === 'completed' ? 'line-through text-gray-400' : ''}`}
+                      >
+                        <div className="font-medium truncate">{task.title}</div>
+                        <span className="text-[10px] text-red-500">{format(parseISO(task.due_date!), 'MM/dd')}</span>
+                      </div>
+                    </div>
                   </div>
                 ))
               )}
             </div>
           </div>
           
+          {/* 周一至周日 */}
           {weekDays.map((day, index) => {
             const dayTasks = tasks.filter(t => {
               const displayDate = getTaskDisplayDate(t);
               return displayDate && isSameDay(parseISO(displayDate), day);
             });
+            const isTodayDate = isToday(day);
+            
             return (
               <div key={index} className="min-h-[200px]">
-                <div className={`text-center py-2 rounded-t-lg ${isToday(day) ? 'bg-blue-50' : 'bg-gray-50'}`}>
-                  <p className="text-xs text-gray-500">{['一','二','三','四','五','六','日'][index]}</p>
-                  <p className={`text-lg font-medium ${isToday(day) ? 'text-blue-600' : 'text-gray-900'}`}>{format(day, 'd')}</p>
+                <div className={`text-center py-2 rounded-t-lg ${isTodayDate ? 'bg-blue-100' : 'bg-gray-50'}`}>
+                  <p className={`text-xs ${isTodayDate ? 'text-blue-600' : 'text-gray-500'}`}>{['一','二','三','四','五','六','日'][index]}</p>
+                  <p className={`text-lg font-medium ${isTodayDate ? 'text-blue-600' : 'text-gray-900'}`}>{format(day, 'd')}</p>
+                  <p className="text-[10px] mt-0.5 text-gray-400">{dayTasks.length}个</p>
                 </div>
-                <div className="p-2 space-y-2 border border-t-0 border-gray-200 rounded-b-lg min-h-[160px]">
+                <div className="p-2 space-y-2 border border-t-0 border-gray-200 rounded-b-lg min-h-[200px]">
                   {dayTasks.map(task => (
-                    <div key={task.id} onClick={() => openTaskDetail(task)} className={`text-xs p-2 rounded border cursor-pointer ${task.status === 'completed' ? 'bg-gray-100 border-gray-200 line-through' : PRIORITY_CONFIG[task.priority].bg + ' ' + PRIORITY_CONFIG[task.priority].border}`}>
-                      <div className="font-medium truncate">{task.title}</div>
-                      <button onClick={(e) => { e.stopPropagation(); handleCompleteClick(task); }} className="mt-1 w-4 h-4 rounded border flex items-center justify-center">
-                        {task.status === 'completed' && <CheckCircle2 className="w-3 h-3" />}
-                      </button>
+                    <div 
+                      key={task.id} 
+                      className={`text-xs p-2 rounded border cursor-pointer transition-all ${
+                        task.status === 'completed' 
+                          ? 'bg-gray-50 border-gray-200 opacity-60' 
+                          : `${PRIORITY_CONFIG[task.priority].bg} ${PRIORITY_CONFIG[task.priority].border} hover:shadow-sm`
+                      }`}
+                    >
+                      <div className="flex items-start gap-1.5">
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); handleCompleteClick(task); }}
+                          className={`flex-shrink-0 w-4 h-4 rounded border flex items-center justify-center transition-colors ${
+                            task.status === 'completed' 
+                              ? 'bg-emerald-500 border-emerald-500' 
+                              : 'border-gray-300 hover:border-emerald-500 bg-white'
+                          }`}
+                        >
+                          {task.status === 'completed' && <CheckCircle2 className="w-3 h-3 text-white" />}
+                        </button>
+                        <div 
+                          onClick={() => openTaskDetail(task)}
+                          className={`flex-1 min-w-0 ${task.status === 'completed' ? 'line-through text-gray-400' : ''}`}
+                        >
+                          <div className="font-medium truncate">{task.title}</div>
+                          {task.estimated_pomodoros && (
+                            <span className="text-[10px] text-gray-400">🍅{task.estimated_pomodoros}</span>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   ))}
                   {dayTasks.length === 0 && <p className="text-xs text-gray-300 text-center py-4">无任务</p>}
