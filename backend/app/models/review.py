@@ -3,7 +3,7 @@
 
 支持日/周/月/季度/年复盘
 """
-from sqlalchemy import Column, Integer, String, Date, DateTime, ForeignKey, Text, Enum
+from sqlalchemy import Column, Integer, String, Date, DateTime, ForeignKey, Text, Enum, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import enum
@@ -34,13 +34,20 @@ class Review(Base):
     week = Column(Integer, nullable=True)
     date = Column(Date, nullable=True)  # 对于日复盘
     
-    # 复盘内容（可以根据需要扩展更多字段）
+    # 日复盘 - 时间线记录（JSON格式: [{time, content, type, ref_id}, ...]）
+    timeline = Column(JSON, nullable=True)
+    
+    # 日复盘 - 简化反思字段
+    notes = Column(Text, nullable=True)           # 随意记录（代替高光/挑战/学习）
+    tomorrow = Column(Text, nullable=True)        # 明天注意（代替下一步行动）
+    mood = Column(Integer, nullable=True)         # 心情评分 1-10
+    
+    # 兼容旧字段（保留但不再主要使用）
     highlights = Column(Text, nullable=True)      # 高光时刻/成就
     challenges = Column(Text, nullable=True)      # 遇到的挑战
     learnings = Column(Text, nullable=True)       # 学到的东西
     next_steps = Column(Text, nullable=True)      # 下一步行动
     gratitude = Column(Text, nullable=True)       # 感恩事项
-    mood = Column(Integer, nullable=True)         # 心情评分 1-10
     
     # 周复盘模板 (KPT)
     keep = Column(Text, nullable=True)            # 需要保持的

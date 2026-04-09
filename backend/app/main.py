@@ -17,6 +17,7 @@ from app.models.habit import HabitFrequency
 from app.models.task import TaskType, TaskStatus, TaskPriority
 from app.models.project import ProjectStatus
 from app.models.goal import GoalStatus
+from app.api import reviews as reviews_router
 
 # HabitFrequency 值映射
 HABIT_CUSTOM = HabitFrequency.CUSTOM  # 固定日期（自定义）
@@ -32,6 +33,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 注册路由
+app.include_router(reviews_router.router, prefix="/api")
 
 def get_db():
     db = SessionLocal()

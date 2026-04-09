@@ -3,8 +3,16 @@
 """
 from pydantic import BaseModel
 from datetime import date, datetime
-from typing import Optional
+from typing import Optional, List
 from app.models.review import ReviewPeriod
+
+
+class TimelineItem(BaseModel):
+    """时间线记录项"""
+    time: str                    # 时间，如 "14:30"
+    content: str                 # 内容描述
+    type: str = "life"          # 类型: task, habit, life
+    ref_id: Optional[int] = None # 关联的任务/习惯ID
 
 
 class ReviewBase(BaseModel):
@@ -16,18 +24,23 @@ class ReviewBase(BaseModel):
     week: Optional[int] = None
     date: Optional[date] = None
     
-    # 复盘内容 - 日复盘
+    # 日复盘 - 新字段（时间线 + 简化反思）
+    timeline: Optional[List[TimelineItem]] = None  # 时间线记录
+    notes: Optional[str] = None                    # 随意记录
+    tomorrow: Optional[str] = None                 # 明天注意
+    mood: Optional[int] = None                     # 心情评分 1-10
+    
+    # 兼容旧字段
     highlights: Optional[str] = None
     challenges: Optional[str] = None
     learnings: Optional[str] = None
     next_steps: Optional[str] = None
     gratitude: Optional[str] = None
-    mood: Optional[int] = None  # 1-10
     
     # 周复盘 - KPT模板
     keep: Optional[str] = None
     problem: Optional[str] = None
-    try_: Optional[str] = None  # 使用 try_ 避免 Python 关键字冲突
+    try_: Optional[str] = None
     
     # 月/季度/年度复盘 - ORID模板
     objective_summary: Optional[str] = None
@@ -41,13 +54,18 @@ class ReviewCreate(ReviewBase):
 
 
 class ReviewUpdate(BaseModel):
-    # 日复盘
+    # 日复盘 - 新字段
+    timeline: Optional[List[TimelineItem]] = None
+    notes: Optional[str] = None
+    tomorrow: Optional[str] = None
+    mood: Optional[int] = None
+    
+    # 兼容旧字段
     highlights: Optional[str] = None
     challenges: Optional[str] = None
     learnings: Optional[str] = None
     next_steps: Optional[str] = None
     gratitude: Optional[str] = None
-    mood: Optional[int] = None
     
     # 周复盘 - KPT
     keep: Optional[str] = None

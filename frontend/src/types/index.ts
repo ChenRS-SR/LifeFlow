@@ -86,6 +86,13 @@ export interface HabitLog {
 
 export type ReviewPeriod = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
 
+export interface TimelineItem {
+  time: string;
+  content: string;
+  type: 'task' | 'habit' | 'life';
+  ref_id?: number;
+}
+
 export interface Review {
   id: number;
   user_id: number;
@@ -95,13 +102,17 @@ export interface Review {
   month?: number;
   week?: number;
   date?: string;
-  // 日复盘字段
+  // 日复盘 - 新字段
+  timeline?: TimelineItem[];
+  notes?: string;
+  tomorrow?: string;
+  mood?: number;
+  // 兼容旧字段
   highlights?: string;
   challenges?: string;
   learnings?: string;
   next_steps?: string;
   gratitude?: string;
-  mood?: number;
   // 周复盘字段 (KPT)
   keep?: string;
   problem?: string;

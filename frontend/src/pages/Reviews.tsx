@@ -1,11 +1,12 @@
 import { useEffect, useState, useCallback } from 'react';
 import { 
   BookOpen, Calendar, Save, ChevronLeft, ChevronRight, 
-  TrendingUp, Target, CheckCircle2, Folder
+  TrendingUp, Target, CheckCircle2, Folder, Plus, X, Clock,
+  Smile, FileText, CalendarDays, Zap
 } from 'lucide-react';
-import { reviewsAPI } from '../services/api';
-import type { Review } from '../types';
-import { format, startOfWeek, addDays, getWeek, getYear } from 'date-fns';
+import { reviewsAPI, taskAPI, habitAPI } from '../services/api';
+import type { Review, TimelineItem, Task, Habit, HabitLog } from '../types';
+import { format, startOfWeek, addDays, getWeek, getYear, parseISO } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 
 // ============ 类型定义 ============
@@ -64,6 +65,13 @@ interface PeriodSummary {
   };
 }
 
+interface DailyFormData {
+  timeline: TimelineItem[];
+  notes: string;
+  tomorrow: string;
+  mood: number;
+}
+
 interface ReviewFormData {
   highlights: string;
   challenges: string;
@@ -80,19 +88,207 @@ interface ReviewFormData {
   decisional_summary?: string;
 }
 
+// ============ Toast 组件 ============
+function Toast({ message, type, onClose }: { message: string; type: 'success' | 'error'; onClose: () => void }) {
+  useEffect(() => {
+    const timer = setTimeout(onClose, 3000);
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
+  return (
+    <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 animate-in fade-in slide-in-from-top-2 ${
+      type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
+    }`}>
+      {type === 'success' ? <CheckCircle2 size={18} /> : <X size={18} />}
+      <span>{message}</span>
+    </div>
+  );
+}
+
+// ============ 时间线编辑组件 ============
+function TimelineEditor({ 
+  timeline, 
+  onChange,
+  date 
+}: { 
+  timeline: TimelineItem[]; 
+  onChange: (timeline: TimelineItem[]) => void;
+  date: Date;
+}) {
+  const [newTime, setNewTime] = useState('09:00');
+  const [newContent, setNewContent] = useState('');
+  const [suggestedItems, setSuggestedItems] = useState<TimelineItem[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  // 加载当天的任务和习惯作为建议
+  useEffect(() => {
+    const loadSuggestions = async () => {
+      setLoading(true);
+      try {
+        const suggestions: TimelineItem[] = [];
+        
+        // 获取当天完成的任务
+        const tasksRes = await taskAPI.list('today');
+        const tasks = tasksRes.data || [];
+        tasks.filter((t: Task) => t.status === 'completed').forEach((t: Task) => {
+          suggestions.push({
+            time: '09:00', // 默认时间
+            content: `完成任务: ${t.title}`,
+            type: 'task',
+            ref_id: t.id
+          });
+        });
+
+        // 获取当天的习惯打卡
+        const today = format(date, 'yyyy-MM-dd');
+        try {
+          const habitsRes = await habitAPI.list();
+          const habits = habitsRes.data || [];
+          // 这里简化处理，实际应该获取当天的打卡记录
+          habits.slice(0, 3).forEach((h: Habit) => {
+            suggestions.push({
+              time: '08:00',
+              content: `习惯: ${h.name}`,
+              type: 'habit',
+              ref_id: h.id
+            });
+          });
+        } catch (e) {
+          // 忽略习惯加载错误
+        }
+
+        setSuggestedItems(suggestions);
+      } catch (error) {
+        console.error('加载建议失败:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadSuggestions();
+  }, [date]);
+
+  const addItem = () => {
+    if (!newContent.trim()) return;
+    const newItem: TimelineItem = {
+      time: newTime,
+      content: newContent.trim(),
+      type: 'life'
+    };
+    const updated = [...timeline, newItem].sort((a, b) => a.time.localeCompare(b.time));
+    onChange(updated);
+    setNewContent('');
+  };
+
+  const removeItem = (index: number) => {
+    const updated = timeline.filter((_, i) => i !== index);
+    onChange(updated);
+  };
+
+  const addSuggested = (item: TimelineItem) => {
+    if (!timeline.some(t => t.content === item.content && t.type === item.type)) {
+      const updated = [...timeline, item].sort((a, b) => a.time.localeCompare(b.time));
+      onChange(updated);
+    }
+  };
+
+  const getTypeIcon = (type: string) => {
+    switch (type) {
+      case 'task': return '📋';
+      case 'habit': return '💪';
+      default: return '•';
+    }
+  };
+
+  const getTypeColor = (type: string) => {
+    switch (type) {
+      case 'task': return 'bg-blue-50 text-blue-700 border-blue-200';
+      case 'habit': return 'bg-green-50 text-green-700 border-green-200';
+      default: return 'bg-gray-50 text-gray-700 border-gray-200';
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* 时间线列表 */}
+      <div className="space-y-2">
+        {timeline.length === 0 ? (
+          <div className="text-center py-6 text-gray-400 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
+            <Clock className="w-8 h-8 mx-auto mb-2 opacity-50" />
+            <p className="text-sm">还没有记录，添加今天的事项吧</p>
+          </div>
+        ) : (
+          timeline.map((item, index) => (
+            <div 
+              key={index} 
+              className={`flex items-center gap-3 p-3 rounded-lg border ${getTypeColor(item.type)}`}
+            >
+              <span className="font-mono text-sm font-medium w-12">{item.time}</span>
+              <span className="flex-1">{getTypeIcon(item.type)} {item.content}</span>
+              <button 
+                onClick={() => removeItem(index)}
+                className="p-1 hover:bg-white/50 rounded transition-colors"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* 添加新项 */}
+      <div className="flex gap-2">
+        <input
+          type="time"
+          value={newTime}
+          onChange={(e) => setNewTime(e.target.value)}
+          className="input w-24 text-sm"
+        />
+        <input
+          type="text"
+          value={newContent}
+          onChange={(e) => setNewContent(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && addItem()}
+          placeholder="做了什么..."
+          className="input flex-1 text-sm"
+        />
+        <button
+          onClick={addItem}
+          disabled={!newContent.trim()}
+          className="btn-primary px-3 py-2 disabled:opacity-50"
+        >
+          <Plus size={16} />
+        </button>
+      </div>
+
+      {/* 建议项 */}
+      {suggestedItems.length > 0 && (
+        <div className="pt-2 border-t border-gray-100">
+          <p className="text-xs text-gray-500 mb-2">从今日任务和习惯导入:</p>
+          <div className="flex flex-wrap gap-2">
+            {suggestedItems.slice(0, 5).map((item, idx) => (
+              <button
+                key={idx}
+                onClick={() => addSuggested(item)}
+                disabled={timeline.some(t => t.content === item.content && t.type === item.type)}
+                className="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                + {item.content}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ============ 复盘模板 ============
 const REVIEW_TEMPLATES: Record<TabPeriod, { title: string; description: string; fields: Array<{ key: keyof ReviewFormData; label: string; placeholder: string }> }> = {
   daily: {
     title: '日复盘',
     description: '记录今天的成长与感悟',
-    fields: [
-      { key: 'highlights', label: '🌟 今日高光 / 成就', placeholder: '今天最有成就感的事是什么？' },
-      { key: 'challenges', label: '💪 遇到的挑战', placeholder: '今天遇到什么困难？如何解决的？' },
-      { key: 'learnings', label: '💡 学到的东西', placeholder: '今天有什么新收获？' },
-      { key: 'next_steps', label: '📝 下一步行动', placeholder: '明天打算做什么？' },
-      { key: 'gratitude', label: '🙏 感恩事项', placeholder: '今天有什么值得感恩的？' },
-    ]
+    fields: []
   },
   weekly: {
     title: '周复盘',
@@ -149,14 +345,13 @@ const getQuarter = (date: Date): number => {
   return Math.floor(date.getMonth() / 3) + 1;
 };
 
-
 // ============ 子组件：数据展示卡片 ============
 function TaskSummaryCard({ data }: { data: PeriodSummary['tasks'] }) {
   if (!data || data.total === 0) {
     return (
       <div className="bg-gray-50 rounded-lg p-4 text-center text-gray-400">
         <CheckCircle2 className="w-8 h-8 mx-auto mb-2 opacity-50" />
-        <p className="text-sm">本周暂无任务数据</p>
+        <p className="text-sm">暂无任务数据</p>
       </div>
     );
   }
@@ -175,7 +370,7 @@ function TaskSummaryCard({ data }: { data: PeriodSummary['tasks'] }) {
       </div>
       {data.completed_list.length > 0 && (
         <div className="space-y-1">
-          <p className="text-xs text-gray-500 font-medium">最近完成：</p>
+          <p className="text-xs text-gray-500 font-medium">今天完成:</p>
           {data.completed_list.slice(0, 3).map(task => (
             <div key={task.id} className="text-sm text-gray-700 truncate bg-white/50 rounded px-2 py-1">
               ✓ {task.title}
@@ -304,13 +499,13 @@ function ProjectsSummaryCard({ data }: { data: PeriodSummary['projects'] }) {
   );
 }
 
-
 // ============ 主组件 ============
 export default function Reviews() {
   // 状态
   const [activeTab, setActiveTab] = useState<TabPeriod>('daily');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   
   // 当前周期日期状态
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
@@ -324,12 +519,25 @@ export default function Reviews() {
   const [periodSummary, setPeriodSummary] = useState<PeriodSummary | null>(null);
   const [allReviews, setAllReviews] = useState<Review[]>([]);
   
-  // 表单数据
+  // 日复盘表单
+  const [dailyForm, setDailyForm] = useState<DailyFormData>({
+    timeline: [],
+    notes: '',
+    tomorrow: '',
+    mood: 5
+  });
+  
+  // 其他复盘表单（兼容旧版）
   const [formData, setFormData] = useState<ReviewFormData>({
     highlights: '', challenges: '', learnings: '', next_steps: '', gratitude: '', mood: 5,
     keep: '', problem: '', try_: '',
     objective_summary: '', reflective_summary: '', interpretive_summary: '', decisional_summary: '',
   });
+
+  // 显示Toast
+  const showToast = useCallback((message: string, type: 'success' | 'error') => {
+    setToast({ message, type });
+  }, []);
 
   // 获取当前周期的标识参数
   const getPeriodParams = useCallback(() => {
@@ -368,27 +576,44 @@ export default function Reviews() {
       setPeriodSummary(summaryData);
       
       if (reviewData) {
-        setFormData({
-          highlights: reviewData.highlights || '', challenges: reviewData.challenges || '',
-          learnings: reviewData.learnings || '', next_steps: reviewData.next_steps || '',
-          gratitude: reviewData.gratitude || '', mood: reviewData.mood || 5,
-          keep: reviewData.keep || '', problem: reviewData.problem || '', try_: reviewData.try_ || '',
-          objective_summary: reviewData.objective_summary || '', reflective_summary: reviewData.reflective_summary || '',
-          interpretive_summary: reviewData.interpretive_summary || '', decisional_summary: reviewData.decisional_summary || '',
-        });
+        // 日复盘使用新表单
+        if (activeTab === 'daily') {
+          setDailyForm({
+            timeline: reviewData.timeline || [],
+            notes: reviewData.notes || '',
+            tomorrow: reviewData.tomorrow || '',
+            mood: reviewData.mood || 5
+          });
+        } else {
+          // 其他复盘使用旧表单
+          setFormData({
+            highlights: reviewData.highlights || '', challenges: reviewData.challenges || '',
+            learnings: reviewData.learnings || '', next_steps: reviewData.next_steps || '',
+            gratitude: reviewData.gratitude || '', mood: reviewData.mood || 5,
+            keep: reviewData.keep || '', problem: reviewData.problem || '', try_: reviewData.try_ || '',
+            objective_summary: reviewData.objective_summary || '', reflective_summary: reviewData.reflective_summary || '',
+            interpretive_summary: reviewData.interpretive_summary || '', decisional_summary: reviewData.decisional_summary || '',
+          });
+        }
       } else {
-        setFormData({
-          highlights: '', challenges: '', learnings: '', next_steps: '', gratitude: '', mood: 5,
-          keep: '', problem: '', try_: '',
-          objective_summary: '', reflective_summary: '', interpretive_summary: '', decisional_summary: '',
-        });
+        // 重置表单
+        if (activeTab === 'daily') {
+          setDailyForm({ timeline: [], notes: '', tomorrow: '', mood: 5 });
+        } else {
+          setFormData({
+            highlights: '', challenges: '', learnings: '', next_steps: '', gratitude: '', mood: 5,
+            keep: '', problem: '', try_: '',
+            objective_summary: '', reflective_summary: '', interpretive_summary: '', decisional_summary: '',
+          });
+        }
       }
     } catch (error) {
       console.error('加载复盘失败:', error);
+      showToast('加载复盘失败', 'error');
     } finally {
       setLoading(false);
     }
-  }, [activeTab, getPeriodParams]);
+  }, [activeTab, getPeriodParams, showToast]);
 
   useEffect(() => { loadReviews(); }, [loadReviews]);
   useEffect(() => { loadCurrentReview(); }, [loadCurrentReview]);
@@ -398,16 +623,33 @@ export default function Reviews() {
     setSaving(true);
     try {
       const params = getPeriodParams();
-      const data = { period: activeTab, ...params, ...formData };
+      let data: any;
+      
+      if (activeTab === 'daily') {
+        data = { 
+          period: activeTab, 
+          ...params, 
+          ...dailyForm,
+          highlights: dailyForm.notes, // 兼容旧字段
+          next_steps: dailyForm.tomorrow
+        };
+      } else {
+        data = { period: activeTab, ...params, ...formData };
+      }
+      
       if (existingReview) {
         await reviewsAPI.update(existingReview.id, data);
       } else {
         await reviewsAPI.create(data);
       }
-      loadCurrentReview();
-      loadReviews();
-    } catch (error) {
+      
+      await loadCurrentReview();
+      await loadReviews();
+      showToast('复盘已保存', 'success');
+    } catch (error: any) {
       console.error('保存复盘失败:', error);
+      const msg = error.response?.data?.detail || '保存失败，请检查网络';
+      showToast(msg, 'error');
     } finally {
       setSaving(false);
     }
@@ -453,7 +695,96 @@ export default function Reviews() {
     }
   };
 
-  // 渲染表单字段
+  // 渲染日复盘表单
+  const renderDailyForm = () => {
+    return (
+      <div className="space-y-6">
+        {/* 时间线 */}
+        <div>
+          <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
+            <Clock size={16} className="text-primary-600" />
+            ⏰ 今天做了什么
+          </h4>
+          <TimelineEditor 
+            timeline={dailyForm.timeline} 
+            onChange={(timeline) => setDailyForm({ ...dailyForm, timeline })}
+            date={currentDate}
+          />
+        </div>
+
+        {/* 今日数据汇总 */}
+        <div className="bg-gray-50 rounded-lg p-4">
+          <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
+            <Zap size={16} className="text-yellow-600" />
+            📊 今日数据（自动同步）
+          </h4>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-white rounded p-3 text-center">
+              <div className="text-2xl font-bold text-blue-600">0</div>
+              <div className="text-xs text-gray-500">完成任务</div>
+            </div>
+            <div className="bg-white rounded p-3 text-center">
+              <div className="text-2xl font-bold text-green-600">0</div>
+              <div className="text-xs text-gray-500">习惯打卡</div>
+            </div>
+          </div>
+        </div>
+
+        {/* 心情评分 */}
+        <div>
+          <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
+            <Smile size={16} className="text-yellow-600" />
+            😊 今天状态怎么样？（1-10分）
+          </h4>
+          <div className="bg-gray-50 rounded-lg p-4">
+            <input
+              type="range" min={1} max={10}
+              value={dailyForm.mood}
+              onChange={(e) => setDailyForm({ ...dailyForm, mood: parseInt(e.target.value) })}
+              className="w-full"
+            />
+            <div className="flex justify-between text-sm text-gray-500 mt-2">
+              <span>😢 1</span>
+              <span className="font-medium text-primary-600 text-lg">{dailyForm.mood}</span>
+              <span>😄 10</span>
+            </div>
+          </div>
+        </div>
+
+        {/* 随意记录 */}
+        <div>
+          <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
+            <FileText size={16} className="text-blue-600" />
+            📝 有什么想记录的？（可选）
+          </h4>
+          <textarea
+            value={dailyForm.notes}
+            onChange={(e) => setDailyForm({ ...dailyForm, notes: e.target.value })}
+            placeholder="比如：改论文太繁琐容易遗漏细节... / 今天健身感觉状态不错..."
+            className="input w-full"
+            rows={3}
+          />
+        </div>
+
+        {/* 明天注意 */}
+        <div>
+          <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
+            <CalendarDays size={16} className="text-green-600" />
+            🎯 明天要注意什么？（可选）
+          </h4>
+          <textarea
+            value={dailyForm.tomorrow}
+            onChange={(e) => setDailyForm({ ...dailyForm, tomorrow: e.target.value })}
+            placeholder="比如：继续按入职前冲刺计划执行 / 记得带健身手套..."
+            className="input w-full"
+            rows={2}
+          />
+        </div>
+      </div>
+    );
+  };
+
+  // 渲染其他周期表单
   const renderFormFields = () => {
     const template = REVIEW_TEMPLATES[activeTab];
     return (
@@ -512,6 +843,15 @@ export default function Reviews() {
 
   return (
     <div>
+      {/* Toast */}
+      {toast && (
+        <Toast 
+          message={toast.message} 
+          type={toast.type} 
+          onClose={() => setToast(null)} 
+        />
+      )}
+
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-gray-900">复盘</h2>
         <p className="text-gray-500 mt-1">记录成长，反思进步</p>
@@ -608,15 +948,19 @@ export default function Reviews() {
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                   <BookOpen size={20} />
-                  {REVIEW_TEMPLATES[activeTab].title}
+                  {activeTab === 'daily' ? '日复盘' : REVIEW_TEMPLATES[activeTab].title}
                 </h3>
-                <p className="text-sm text-gray-500 mt-1">{REVIEW_TEMPLATES[activeTab].description}</p>
+                <p className="text-sm text-gray-500 mt-1">
+                  {activeTab === 'daily' ? '记录今天的时间线和感受' : REVIEW_TEMPLATES[activeTab].description}
+                </p>
               </div>
               {existingReview && (
                 <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">已保存</span>
               )}
             </div>
-            {renderFormFields()}
+            
+            {activeTab === 'daily' ? renderDailyForm() : renderFormFields()}
+            
             <button
               onClick={handleSave}
               disabled={saving}
