@@ -31,12 +31,8 @@ def get_current_user(
     db: Session = Depends(get_db)
 ) -> models.User:
     """
-    通过 JWT Token 获取当前登录用户
-    
-    用法：
-        @app.get("/items/")
-        def read_items(current_user: User = Depends(get_current_user)):
-            ...
+    通过 Token 获取当前登录用户
+    支持 JWT Token 和简单 Token (token_1, token_2 等)
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -44,25 +40,36 @@ def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
     
+    token = credentials.credentials
+    
+    # 支持简单 token (如 token_1, token_2)
+    if token.startswith("token_"):
+        try:
+            user_id = int(token.split("_")[1])
+            user = db.query(models.User).filter(models.User.id == user_id).first()
+            if user:
+                return user
+        except (ValueError, IndexError):
+            pass
+    
+    # 尝试 JWT Token
     try:
-        # 解码 JWT Token
         payload = jwt.decode(
-            credentials.credentials,
+            token,
             settings.SECRET_KEY,
             algorithms=[settings.ALGORITHM]
         )
         user_id: str = payload.get("sub")
         if user_id is None:
             raise credentials_exception
+        
+        user = db.query(models.User).filter(models.User.id == int(user_id)).first()
+        if user is None:
+            raise credentials_exception
+        
+        return user
     except JWTError:
         raise credentials_exception
-    
-    # 查询用户
-    user = db.query(models.User).filter(models.User.id == int(user_id)).first()
-    if user is None:
-        raise credentials_exception
-    
-    return user
 
 
 def get_current_active_user(
