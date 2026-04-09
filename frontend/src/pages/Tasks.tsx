@@ -619,7 +619,7 @@ export default function Tasks() {
 
       // 表格 | a | b |
       const tableRegex = /\|(.+)\|\n\|[-\s|]+\|\n((?:\|.+\|\n?)+)/g;
-      html = html.replace(tableRegex, (match, header, rows) => {
+      html = html.replace(tableRegex, (_match, header, rows) => {
         const headers = header.split('|').map((h: string) => h.trim()).filter((h: string) => h);
         const rowData = rows.trim().split('\n').map((row: string) => 
           row.split('|').map((cell: string) => cell.trim()).filter((cell: string) => cell)

@@ -95,12 +95,22 @@ export interface Review {
   month?: number;
   week?: number;
   date?: string;
+  // 日复盘字段
   highlights?: string;
   challenges?: string;
   learnings?: string;
   next_steps?: string;
   gratitude?: string;
   mood?: number;
+  // 周复盘字段 (KPT)
+  keep?: string;
+  problem?: string;
+  try_?: string;
+  // 月/季度/年度字段 (ORID)
+  objective_summary?: string;
+  reflective_summary?: string;
+  interpretive_summary?: string;
+  decisional_summary?: string;
   created_at: string;
 }
 

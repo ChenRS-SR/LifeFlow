@@ -42,6 +42,17 @@ class Review(Base):
     gratitude = Column(Text, nullable=True)       # 感恩事项
     mood = Column(Integer, nullable=True)         # 心情评分 1-10
     
+    # 周复盘模板 (KPT)
+    keep = Column(Text, nullable=True)            # 需要保持的
+    problem = Column(Text, nullable=True)         # 遇到的问题
+    try_ = Column("try", Text, nullable=True)     # 下一步尝试
+    
+    # 月/季度/年度复盘模板 (ORID)
+    objective_summary = Column(Text, nullable=True)    # 客观回顾
+    reflective_summary = Column(Text, nullable=True)   # 主观感受
+    interpretive_summary = Column(Text, nullable=True) # 深度思考/解读
+    decisional_summary = Column(Text, nullable=True)   # 决策/行动计划
+    
     # 时间戳
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

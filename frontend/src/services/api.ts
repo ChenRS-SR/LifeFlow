@@ -222,10 +222,25 @@ export const habitsAPI = {
 
 // ==================== 复盘 API ====================
 export const reviewAPI = {
-  list: () => apiClient.get('/api/reviews/'),
+  list: (params?: { period?: string; year?: number; month?: number; week?: number; quarter?: number }) => 
+    apiClient.get('/api/reviews/', { params }),
   
-  create: (data: { period: string; period_date: string; content: string; mood?: number }) =>
-    apiClient.post('/api/reviews/', data),
+  getByPeriod: async (period: string, params: { year: number; month?: number; week?: number; quarter?: number; date?: string }) => {
+    const res = await apiClient.get(`/api/reviews/by-period/${period}`, { params });
+    return res.data;
+  },
+  
+  getPeriodSummary: async (period: string, params: { year: number; month?: number; week?: number; quarter?: number }) => {
+    const res = await apiClient.get('/api/reviews/period/summary', { params: { period, ...params } });
+    return res.data;
+  },
+  
+  create: (data: { 
+    period: string; year: number; month?: number; week?: number; quarter?: number; date?: string; 
+    highlights?: string; challenges?: string; learnings?: string; next_steps?: string; gratitude?: string; mood?: number;
+    keep?: string; problem?: string; try_?: string;
+    objective_summary?: string; reflective_summary?: string; interpretive_summary?: string; decisional_summary?: string;
+  }) => apiClient.post('/api/reviews/', data),
   
   update: (id: number, data: any) =>
     apiClient.put(`/api/reviews/${id}`, data),
@@ -235,8 +250,18 @@ export const reviewAPI = {
 
 // 别名，供 Reviews.tsx 使用
 export const reviewsAPI = {
-  getAll: async () => {
-    const res = await apiClient.get('/api/reviews/');
+  getAll: async (params?: { period?: string; year?: number; month?: number; week?: number; quarter?: number }) => {
+    const res = await apiClient.get('/api/reviews/', { params });
+    return res.data;
+  },
+  
+  getByPeriod: async (period: string, params: { year: number; month?: number; week?: number; quarter?: number; date?: string }) => {
+    const res = await apiClient.get(`/api/reviews/by-period/${period}`, { params });
+    return res.data;
+  },
+  
+  getPeriodSummary: async (period: string, params: { year: number; month?: number; week?: number; quarter?: number }) => {
+    const res = await apiClient.get('/api/reviews/period/summary', { params: { period, ...params } });
     return res.data;
   },
   
