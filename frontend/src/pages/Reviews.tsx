@@ -715,6 +715,12 @@ export default function Reviews() {
     mood: 5
   });
   
+  // 今日数据统计
+  const [todayStats, setTodayStats] = useState({
+    completedTasks: 0,
+    habitCheckins: 0
+  });
+  
   // 其他复盘表单（兼容旧版）
   const [formData, setFormData] = useState<ReviewFormData>({
     highlights: '', challenges: '', learnings: '', next_steps: '', gratitude: '', mood: 5,
@@ -805,6 +811,45 @@ export default function Reviews() {
 
   useEffect(() => { loadReviews(); }, [loadReviews]);
   useEffect(() => { loadCurrentReview(); }, [loadCurrentReview]);
+  
+  // 加载今日数据统计
+  useEffect(() => {
+    const loadTodayStats = async () => {
+      if (activeTab !== 'daily') return;
+      
+      try {
+        const today = format(currentDate, 'yyyy-MM-dd');
+        
+        // 获取今日任务
+        const tasksRes = await taskAPI.list('today');
+        const tasks = tasksRes.data || [];
+        const completedTasks = tasks.filter((t: Task) => t.status === 'completed').length;
+        
+        // 获取今日习惯打卡
+        let checkinCount = 0;
+        try {
+          const weekRes = await habitAPI.getWeek();
+          const weekData = weekRes.data || {};
+          Object.values(weekData).forEach((habitData: any) => {
+            if (habitData[today] > 0) {
+              checkinCount++;
+            }
+          });
+        } catch (e) {
+          console.error('加载习惯打卡失败:', e);
+        }
+        
+        setTodayStats({
+          completedTasks,
+          habitCheckins: checkinCount
+        });
+      } catch (error) {
+        console.error('加载今日统计失败:', error);
+      }
+    };
+    
+    loadTodayStats();
+  }, [activeTab, currentDate]);
 
   // 保存复盘
   const handleSave = async () => {
@@ -932,11 +977,11 @@ export default function Reviews() {
           </h4>
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-white rounded p-3 text-center">
-              <div className="text-2xl font-bold text-blue-600">0</div>
+              <div className="text-2xl font-bold text-blue-600">{todayStats.completedTasks}</div>
               <div className="text-xs text-gray-500">完成任务</div>
             </div>
             <div className="bg-white rounded p-3 text-center">
-              <div className="text-2xl font-bold text-green-600">0</div>
+              <div className="text-2xl font-bold text-green-600">{todayStats.habitCheckins}</div>
               <div className="text-xs text-gray-500">习惯打卡</div>
             </div>
           </div>

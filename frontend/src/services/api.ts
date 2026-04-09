@@ -270,7 +270,32 @@ export const reviewsAPI = {
     return res.data;
   },
   
-  create: (data: any) => apiClient.post('/api/reviews/', data),
+  create: (data: {
+    period: string;
+    year: number;
+    month?: number;
+    week?: number;
+    quarter?: number;
+    date?: string;
+    // 新字段
+    timeline?: Array<{ time: string; content: string; type: string; ref_id?: number | null }>;
+    notes?: string;
+    tomorrow?: string;
+    mood?: number;
+    // 兼容旧字段
+    highlights?: string;
+    challenges?: string;
+    learnings?: string;
+    next_steps?: string;
+    gratitude?: string;
+    keep?: string;
+    problem?: string;
+    try_?: string;
+    objective_summary?: string;
+    reflective_summary?: string;
+    interpretive_summary?: string;
+    decisional_summary?: string;
+  }) => apiClient.post('/api/reviews/', data),
   
   update: (id: number, data: any) =>
     apiClient.put(`/api/reviews/${id}`, data),
