@@ -1,7 +1,7 @@
 """
 复盘数据模型
 """
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from datetime import date, datetime
 from typing import Optional, List
 from app.models.review import ReviewPeriod
@@ -25,7 +25,15 @@ class ReviewBase(BaseModel):
     quarter: Optional[int] = None
     month: Optional[int] = None
     week: Optional[int] = None
-    date: Optional[date] = None
+    date: Optional[str] = None  # 使用字符串类型，前端传 ISO 格式日期
+    
+    @field_validator('date', mode='before')
+    @classmethod
+    def convert_date_to_string(cls, v):
+        """将 date 对象转换为字符串"""
+        if isinstance(v, date) and not isinstance(v, str):
+            return v.isoformat()
+        return v
     
     # 日复盘 - 新字段（时间线 + 简化反思）
     timeline: Optional[List[TimelineItem]] = None  # 时间线记录

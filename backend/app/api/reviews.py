@@ -269,6 +269,11 @@ def create_review(
     """
     review_data = review_in.model_dump()
     
+    # 将字符串日期转换为 Python date 对象
+    if review_data.get('date'):
+        from datetime import datetime
+        review_data['date'] = datetime.strptime(review_data['date'], '%Y-%m-%d').date()
+    
     db_review = models.Review(
         user_id=current_user.id,
         **review_data
@@ -315,6 +320,7 @@ def get_today_review(
 
 
 @router.put("/{review_id}", response_model=schemas.Review)
+@router.put("/{review_id}", response_model=schemas.Review)
 def update_review(
     review_id: int,
     review_in: schemas.ReviewUpdate,
@@ -330,7 +336,14 @@ def update_review(
     if not review:
         raise HTTPException(status_code=404, detail="复盘不存在")
     
-    for field, value in review_in.model_dump(exclude_unset=True).items():
+    update_data = review_in.model_dump(exclude_unset=True)
+    
+    # 将字符串日期转换为 Python date 对象
+    if update_data.get('date'):
+        from datetime import datetime
+        update_data['date'] = datetime.strptime(update_data['date'], '%Y-%m-%d').date()
+    
+    for field, value in update_data.items():
         setattr(review, field, value)
     
     db.commit()
