@@ -1,13 +1,15 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { 
   BookOpen, Calendar, Save, ChevronLeft, ChevronRight, 
   TrendingUp, Target, CheckCircle2, Folder, Plus, X, Clock,
-  Smile, FileText, CalendarDays, Zap, Import, Search
+  Smile, FileText, CalendarDays, Zap, Import, Search,
+  Download, FileText as FileTextIcon, Image as ImageIcon
 } from 'lucide-react';
 import { reviewsAPI, taskAPI, habitAPI } from '../services/api';
 import type { Review, TimelineItem, Task, Habit, HabitLog } from '../types';
-import { format, startOfWeek, addDays, getWeek, getYear, parseISO } from 'date-fns';
+import { format, startOfWeek, addDays, getWeek, getYear, parseISO, subDays, isSameDay } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 // ============ 类型定义 ============
 type TabPeriod = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
@@ -533,6 +535,169 @@ const getQuarter = (date: Date): number => {
   return Math.floor(date.getMonth() / 3) + 1;
 };
 
+// ============ 心情曲线组件 ============
+function MoodChart({ reviews }: { reviews: Review[] }) {
+  const data = useMemo(() => {
+    const last30Days = Array.from({ length: 30 }, (_, i) => {
+      const date = subDays(new Date(), 29 - i);
+      return {
+        date: format(date, 'MM-dd'),
+        fullDate: date,
+        mood: null as number | null
+      };
+    });
+
+    reviews.forEach(review => {
+      if (review.period === 'daily' && review.date && review.mood) {
+        const reviewDate = parseISO(review.date);
+        const dayData = last30Days.find(d => isSameDay(d.fullDate, reviewDate));
+        if (dayData) {
+          dayData.mood = review.mood;
+        }
+      }
+    });
+
+    return last30Days;
+  }, [reviews]);
+
+  const hasData = data.some(d => d.mood !== null);
+
+  if (!hasData) {
+    return (
+      <div className="bg-gray-50 rounded-lg p-4 text-center text-gray-400">
+        <TrendingUp className="w-8 h-8 mx-auto mb-2 opacity-50" />
+        <p className="text-sm">近30天暂无心情数据</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-lg p-4">
+      <h4 className="text-sm font-medium text-gray-700 mb-3">📈 近30天心情曲线</h4>
+      <div className="h-40">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+            <XAxis 
+              dataKey="date" 
+              tick={{ fontSize: 10 }} 
+              interval={4}
+              axisLine={false}
+            />
+            <YAxis 
+              domain={[1, 10]} 
+              tick={{ fontSize: 10 }}
+              axisLine={false}
+              width={20}
+            />
+            <Tooltip 
+              formatter={(value: number) => [`心情评分: ${value}`, '']}
+              labelFormatter={(label) => `${label}`}
+            />
+            <Line 
+              type="monotone" 
+              dataKey="mood" 
+              stroke="#f59e0b" 
+              strokeWidth={2}
+              dot={{ fill: '#f59e0b', strokeWidth: 0, r: 3 }}
+              connectNulls
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+// ============ 复盘热力图组件（GitHub风格） ============
+function ReviewHeatmap({ reviews }: { reviews: Review[] }) {
+  const data = useMemo(() => {
+    const weeks = 12; // 显示12周
+    const days = weeks * 7;
+    const startDate = subDays(new Date(), days - 1);
+    
+    const cells = Array.from({ length: days }, (_, i) => {
+      const date = addDays(startDate, i);
+      return {
+        date,
+        dateStr: format(date, 'yyyy-MM-dd'),
+        hasReview: false,
+        level: 0
+      };
+    });
+
+    // 标记有复盘的日子
+    reviews.forEach(review => {
+      if (review.date) {
+        const cell = cells.find(c => c.dateStr === review.date);
+        if (cell) {
+          cell.hasReview = true;
+          // 根据心情评分设置颜色深度
+          if (review.mood) {
+            if (review.mood >= 8) cell.level = 4;
+            else if (review.mood >= 6) cell.level = 3;
+            else if (review.mood >= 4) cell.level = 2;
+            else cell.level = 1;
+          } else {
+            cell.level = 1;
+          }
+        }
+      }
+    });
+
+    // 按周分组
+    const weeksData = [];
+    for (let i = 0; i < weeks; i++) {
+      weeksData.push(cells.slice(i * 7, (i + 1) * 7));
+    }
+
+    return weeksData;
+  }, [reviews]);
+
+  const getColor = (level: number) => {
+    const colors = ['bg-gray-100', 'bg-green-200', 'bg-green-300', 'bg-green-400', 'bg-green-500'];
+    return colors[level] || colors[0];
+  };
+
+  const weekDays = ['一', '三', '五', '日'];
+
+  return (
+    <div className="bg-white rounded-lg p-4">
+      <h4 className="text-sm font-medium text-gray-700 mb-3">🔥 复盘打卡热力图</h4>
+      <div className="flex gap-1 overflow-x-auto pb-2">
+        {/* 星期标签 */}
+        <div className="flex flex-col gap-1 mr-2">
+          {weekDays.map((day, i) => (
+            <div key={i} className="h-3 text-xs text-gray-400 flex items-center">{day}</div>
+          ))}
+        </div>
+        
+        {/* 热力格子 */}
+        {data.map((week, weekIndex) => (
+          <div key={weekIndex} className="flex flex-col gap-1">
+            {week.map((cell, dayIndex) => (
+              <div
+                key={dayIndex}
+                className={`w-3 h-3 rounded-sm ${getColor(cell.level)}`}
+                title={`${cell.dateStr}${cell.hasReview ? ' - 已复盘' : ''}`}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center gap-2 mt-2 text-xs text-gray-500">
+        <span>少</span>
+        <div className="flex gap-1">
+          {[0, 1, 2, 3, 4].map(i => (
+            <div key={i} className={`w-3 h-3 rounded-sm ${getColor(i)}`} />
+          ))}
+        </div>
+        <span>多</span>
+      </div>
+    </div>
+  );
+}
+
 // ============ 子组件：数据展示卡片 ============
 function TaskSummaryCard({ data }: { data: PeriodSummary['tasks'] }) {
   if (!data || data.total === 0) {
@@ -829,9 +994,11 @@ export default function Reviews() {
         let checkinCount = 0;
         try {
           const weekRes = await habitAPI.getWeek();
-          const weekData = weekRes.data || {};
-          Object.values(weekData).forEach((habitData: any) => {
-            if (habitData[today] > 0) {
+          const habits = weekRes.data || [];
+          // habits 格式: [{ id, name, week_status: [{ date, actual, completed }, ...] }, ...]
+          habits.forEach((habit: any) => {
+            const todayStatus = habit.week_status?.find((s: any) => s.date === today);
+            if (todayStatus && todayStatus.actual > 0) {
               checkinCount++;
             }
           });
@@ -952,6 +1119,108 @@ export default function Reviews() {
     }
   };
 
+  // 导出为 Markdown
+  const exportToMarkdown = () => {
+    const date = format(currentDate, 'yyyy-MM-dd');
+    const lines = [
+      `# 📅 日复盘 - ${date}`,
+      '',
+      '## ⏰ 时间线',
+      ...(dailyForm.timeline.length > 0 
+        ? dailyForm.timeline.map(item => `- **${item.time}** ${item.content}`)
+        : ['暂无记录']),
+      '',
+      '## 📊 今日数据',
+      `- 完成任务: ${todayStats.completedTasks} 个`,
+      `- 习惯打卡: ${todayStats.habitCheckins} 个`,
+      `- 心情评分: ${dailyForm.mood}/10`,
+      '',
+      '## 📝 记录',
+      dailyForm.notes || '无',
+      '',
+      '## 🎯 明日计划',
+      dailyForm.tomorrow || '无',
+    ];
+    
+    const blob = new Blob([lines.join('\n')], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `复盘-${date}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast('已导出 Markdown', 'success');
+  };
+
+  // 导出为 PDF（使用 print to PDF）
+  const exportToPDF = () => {
+    window.print();
+    showToast('请使用浏览器打印功能保存为 PDF', 'success');
+  };
+
+  // 生成复盘卡片（HTML 转图片）
+  const generateCard = () => {
+    const cardHtml = `
+      <div style="
+        width: 600px;
+        padding: 40px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 20px;
+        color: white;
+        font-family: system-ui, -apple-system, sans-serif;
+      ">
+        <div style="font-size: 14px; opacity: 0.8; margin-bottom: 8px;">
+          📅 ${format(currentDate, 'yyyy年MM月dd日')} 日复盘
+        </div>
+        <div style="font-size: 28px; font-weight: bold; margin-bottom: 20px;">
+          今日复盘总结
+        </div>
+        <div style="
+          background: rgba(255,255,255,0.15);
+          border-radius: 12px;
+          padding: 20px;
+          margin-bottom: 16px;
+        ">
+          <div style="font-size: 14px; opacity: 0.8; margin-bottom: 8px;">心情评分</div>
+          <div style="font-size: 48px; font-weight: bold;">${dailyForm.mood}<span style="font-size: 24px;">/10</span></div>
+          <div style="font-size: 36px; margin-top: 8px;">${dailyForm.mood >= 7 ? '😄' : dailyForm.mood >= 4 ? '😐' : '😢'}</div>
+        </div>
+        <div style="display: flex; gap: 12px; margin-bottom: 16px;">
+          <div style="flex: 1; background: rgba(255,255,255,0.15); border-radius: 12px; padding: 16px; text-align: center;">
+            <div style="font-size: 32px; font-weight: bold;">${todayStats.completedTasks}</div>
+            <div style="font-size: 12px; opacity: 0.8;">完成任务</div>
+          </div>
+          <div style="flex: 1; background: rgba(255,255,255,0.15); border-radius: 12px; padding: 16px; text-align: center;">
+            <div style="font-size: 32px; font-weight: bold;">${todayStats.habitCheckins}</div>
+            <div style="font-size: 12px; opacity: 0.8;">习惯打卡</div>
+          </div>
+        </div>
+        <div style="font-size: 12px; opacity: 0.6; text-align: center;">
+          Generated by LifeFlow
+        </div>
+      </div>
+    `;
+    
+    const newWindow = window.open('', '_blank');
+    if (newWindow) {
+      newWindow.document.write(`
+        <html>
+          <head>
+            <title>复盘卡片</title>
+            <style>
+              body { margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; background: #f5f5f5; }
+            </style>
+          </head>
+          <body>${cardHtml}</body>
+        </html>
+      `);
+      newWindow.document.close();
+      showToast('复盘卡片已生成，请右键保存图片', 'success');
+    }
+  };
+
   // 渲染日复盘表单
   const renderDailyForm = () => {
     return (
@@ -986,6 +1255,12 @@ export default function Reviews() {
             </div>
           </div>
         </div>
+
+        {/* 心情曲线图 */}
+        <MoodChart reviews={allReviews} />
+
+        {/* 复盘热力图 */}
+        <ReviewHeatmap reviews={allReviews} />
 
         {/* 心情评分 */}
         <div>
@@ -1217,6 +1492,33 @@ export default function Reviews() {
             </div>
             
             {activeTab === 'daily' ? renderDailyForm() : renderFormFields()}
+            
+            {/* 导出按钮组 */}
+            {activeTab === 'daily' && (
+              <div className="flex gap-2 mt-4">
+                <button
+                  onClick={exportToMarkdown}
+                  className="flex-1 btn-secondary flex items-center justify-center gap-2 py-2 text-sm"
+                >
+                  <FileTextIcon size={16} />
+                  导出 Markdown
+                </button>
+                <button
+                  onClick={exportToPDF}
+                  className="flex-1 btn-secondary flex items-center justify-center gap-2 py-2 text-sm"
+                >
+                  <Download size={16} />
+                  导出 PDF
+                </button>
+                <button
+                  onClick={generateCard}
+                  className="flex-1 btn-secondary flex items-center justify-center gap-2 py-2 text-sm"
+                >
+                  <ImageIcon size={16} />
+                  生成卡片
+                </button>
+              </div>
+            )}
             
             <button
               onClick={handleSave}
