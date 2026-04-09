@@ -1256,12 +1256,6 @@ export default function Reviews() {
           </div>
         </div>
 
-        {/* 心情曲线图 */}
-        <MoodChart reviews={allReviews} />
-
-        {/* 复盘热力图 */}
-        <ReviewHeatmap reviews={allReviews} />
-
         {/* 心情评分 */}
         <div>
           <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
@@ -1471,6 +1465,14 @@ export default function Reviews() {
               ))}
             </div>
           </div>
+
+          {/* 心情曲线和热力图（仅日复盘显示） */}
+          {activeTab === 'daily' && (
+            <>
+              <MoodChart reviews={allReviews} />
+              <ReviewHeatmap reviews={allReviews} />
+            </>
+          )}
         </div>
 
         {/* 右侧：复盘表单 */}
