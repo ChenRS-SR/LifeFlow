@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { 
   BookOpen, Calendar, Save, ChevronLeft, ChevronRight, 
   TrendingUp, Target, CheckCircle2, Folder, Plus, X, Clock,
-  Smile, FileText, CalendarDays, Zap
+  Smile, FileText, CalendarDays, Zap, Import, Search
 } from 'lucide-react';
 import { reviewsAPI, taskAPI, habitAPI } from '../services/api';
 import type { Review, TimelineItem, Task, Habit, HabitLog } from '../types';
@@ -89,18 +89,257 @@ interface ReviewFormData {
 }
 
 // ============ Toast 组件 ============
-function Toast({ message, type, onClose }: { message: string; type: 'success' | 'error'; onClose: () => void }) {
+function Toast({ message, type, onClose }: { message: string | any; type: 'success' | 'error'; onClose: () => void }) {
   useEffect(() => {
     const timer = setTimeout(onClose, 3000);
     return () => clearTimeout(timer);
   }, [onClose]);
+
+  // 确保 message 是字符串
+  const displayMessage = typeof message === 'string' ? message : 
+    message?.msg || message?.message || JSON.stringify(message);
 
   return (
     <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 animate-in fade-in slide-in-from-top-2 ${
       type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
     }`}>
       {type === 'success' ? <CheckCircle2 size={18} /> : <X size={18} />}
-      <span>{message}</span>
+      <span className="max-w-xs truncate">{displayMessage}</span>
+    </div>
+  );
+}
+
+// ============ 导入弹窗组件 ============
+function ImportModal({ 
+  isOpen, 
+  onClose, 
+  onImport,
+  date 
+}: { 
+  isOpen: boolean;
+  onClose: () => void;
+  onImport: (items: TimelineItem[]) => void;
+  date: Date;
+}) {
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [habits, setHabits] = useState<Habit[]>([]);
+  const [habitLogs, setHabitLogs] = useState<Record<number, number>>({});
+  const [selectedTasks, setSelectedTasks] = useState<Set<number>>(new Set());
+  const [selectedHabits, setSelectedHabits] = useState<Set<number>>(new Set());
+  const [loading, setLoading] = useState(false);
+  const [taskFilter, setTaskFilter] = useState('');
+
+  useEffect(() => {
+    if (!isOpen) return;
+    
+    const loadData = async () => {
+      setLoading(true);
+      try {
+        // 加载所有已完成的任务（不限于今天，方便选择）
+        const tasksRes = await taskAPI.list('completed');
+        const allTasks = tasksRes.data || [];
+        // 只取最近完成的20个
+        setTasks(allTasks.slice(0, 20));
+
+        // 加载习惯列表
+        const habitsRes = await habitAPI.list();
+        const allHabits = habitsRes.data || [];
+        setHabits(allHabits);
+
+        // 加载当天的习惯打卡记录
+        const today = format(date, 'yyyy-MM-dd');
+        try {
+          const weekRes = await habitAPI.getWeek();
+          const weekData = weekRes.data || {};
+          // weekData 格式: { habit_id: { date: count } }
+          const todayLogs: Record<number, number> = {};
+          Object.entries(weekData).forEach(([habitId, dates]: [string, any]) => {
+            if (dates[today] > 0) {
+              todayLogs[parseInt(habitId)] = dates[today];
+            }
+          });
+          setHabitLogs(todayLogs);
+        } catch (e) {
+          console.error('加载习惯打卡失败:', e);
+        }
+      } catch (error) {
+        console.error('加载数据失败:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, [isOpen, date]);
+
+  const handleImport = () => {
+    const items: TimelineItem[] = [];
+    
+    // 添加选中的任务
+    selectedTasks.forEach(taskId => {
+      const task = tasks.find(t => t.id === taskId);
+      if (task) {
+        items.push({
+          time: task.completed_at ? format(parseISO(task.completed_at), 'HH:mm') : '09:00',
+          content: `完成任务: ${task.title}`,
+          type: 'task',
+          ref_id: task.id
+        });
+      }
+    });
+
+    // 添加选中的习惯
+    selectedHabits.forEach(habitId => {
+      const habit = habits.find(h => h.id === habitId);
+      if (habit) {
+        items.push({
+          time: '08:00',
+          content: `习惯打卡: ${habit.name}`,
+          type: 'habit',
+          ref_id: habit.id
+        });
+      }
+    });
+
+    onImport(items);
+    onClose();
+  };
+
+  const toggleTask = (taskId: number) => {
+    const newSet = new Set(selectedTasks);
+    if (newSet.has(taskId)) {
+      newSet.delete(taskId);
+    } else {
+      newSet.add(taskId);
+    }
+    setSelectedTasks(newSet);
+  };
+
+  const toggleHabit = (habitId: number) => {
+    const newSet = new Set(selectedHabits);
+    if (newSet.has(habitId)) {
+      newSet.delete(habitId);
+    } else {
+      newSet.add(habitId);
+    }
+    setSelectedHabits(newSet);
+  };
+
+  const filteredTasks = tasks.filter(t => 
+    t.title.toLowerCase().includes(taskFilter.toLowerCase())
+  );
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b">
+          <h3 className="text-lg font-semibold">导入到时间线</h3>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-auto p-4 space-y-4">
+          {loading ? (
+            <div className="text-center py-8 text-gray-400">
+              <div className="animate-spin h-8 w-8 border-2 border-primary-600 border-t-transparent rounded-full mx-auto mb-2" />
+              <p>加载中...</p>
+            </div>
+          ) : (
+            <>
+              {/* 已完成的任务 */}
+              <div>
+                <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                  <CheckCircle2 size={16} className="text-blue-600" />
+                  已完成的任务 ({selectedTasks.size} 选中)
+                </h4>
+                <div className="relative mb-2">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="搜索任务..."
+                    value={taskFilter}
+                    onChange={(e) => setTaskFilter(e.target.value)}
+                    className="input w-full pl-9 text-sm"
+                  />
+                </div>
+                <div className="space-y-1 max-h-40 overflow-auto">
+                  {filteredTasks.length === 0 ? (
+                    <p className="text-sm text-gray-400 py-2">暂无已完成任务</p>
+                  ) : (
+                    filteredTasks.map(task => (
+                      <label 
+                        key={task.id} 
+                        className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedTasks.has(task.id)}
+                          onChange={() => toggleTask(task.id)}
+                          className="rounded border-gray-300"
+                        />
+                        <span className="flex-1 text-sm truncate">{task.title}</span>
+                        {task.completed_at && (
+                          <span className="text-xs text-gray-400">
+                            {format(parseISO(task.completed_at), 'MM-dd HH:mm')}
+                          </span>
+                        )}
+                      </label>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* 已打卡的习惯 */}
+              <div>
+                <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                  <TrendingUp size={16} className="text-green-600" />
+                  已打卡的习惯 ({selectedHabits.size} 选中)
+                </h4>
+                <div className="space-y-1 max-h-32 overflow-auto">
+                  {habits.filter(h => habitLogs[h.id] > 0).length === 0 ? (
+                    <p className="text-sm text-gray-400 py-2">今天还没有打卡习惯</p>
+                  ) : (
+                    habits.filter(h => habitLogs[h.id] > 0).map(habit => (
+                      <label 
+                        key={habit.id} 
+                        className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedHabits.has(habit.id)}
+                          onChange={() => toggleHabit(habit.id)}
+                          className="rounded border-gray-300"
+                        />
+                        <span className="text-lg">{habit.icon || '🔘'}</span>
+                        <span className="flex-1 text-sm">{habit.name}</span>
+                        <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+                          已打卡
+                        </span>
+                      </label>
+                    ))
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 p-4 border-t">
+          <button onClick={onClose} className="btn-secondary px-4 py-2">
+            取消
+          </button>
+          <button 
+            onClick={handleImport}
+            disabled={selectedTasks.size === 0 && selectedHabits.size === 0}
+            className="btn-primary px-4 py-2 disabled:opacity-50"
+          >
+            导入 ({selectedTasks.size + selectedHabits.size})
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -117,56 +356,7 @@ function TimelineEditor({
 }) {
   const [newTime, setNewTime] = useState('09:00');
   const [newContent, setNewContent] = useState('');
-  const [suggestedItems, setSuggestedItems] = useState<TimelineItem[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  // 加载当天的任务和习惯作为建议
-  useEffect(() => {
-    const loadSuggestions = async () => {
-      setLoading(true);
-      try {
-        const suggestions: TimelineItem[] = [];
-        
-        // 获取当天完成的任务
-        const tasksRes = await taskAPI.list('today');
-        const tasks = tasksRes.data || [];
-        tasks.filter((t: Task) => t.status === 'completed').forEach((t: Task) => {
-          suggestions.push({
-            time: '09:00', // 默认时间
-            content: `完成任务: ${t.title}`,
-            type: 'task',
-            ref_id: t.id
-          });
-        });
-
-        // 获取当天的习惯打卡
-        const today = format(date, 'yyyy-MM-dd');
-        try {
-          const habitsRes = await habitAPI.list();
-          const habits = habitsRes.data || [];
-          // 这里简化处理，实际应该获取当天的打卡记录
-          habits.slice(0, 3).forEach((h: Habit) => {
-            suggestions.push({
-              time: '08:00',
-              content: `习惯: ${h.name}`,
-              type: 'habit',
-              ref_id: h.id
-            });
-          });
-        } catch (e) {
-          // 忽略习惯加载错误
-        }
-
-        setSuggestedItems(suggestions);
-      } catch (error) {
-        console.error('加载建议失败:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadSuggestions();
-  }, [date]);
+  const [showImport, setShowImport] = useState(false);
 
   const addItem = () => {
     if (!newContent.trim()) return;
@@ -185,11 +375,12 @@ function TimelineEditor({
     onChange(updated);
   };
 
-  const addSuggested = (item: TimelineItem) => {
-    if (!timeline.some(t => t.content === item.content && t.type === item.type)) {
-      const updated = [...timeline, item].sort((a, b) => a.time.localeCompare(b.time));
-      onChange(updated);
-    }
+  const handleImport = (items: TimelineItem[]) => {
+    // 合并已有项和新导入项，按时间排序
+    const existingContents = new Set(timeline.map(t => `${t.type}-${t.content}`));
+    const newItems = items.filter(item => !existingContents.has(`${item.type}-${item.content}`));
+    const updated = [...timeline, ...newItems].sort((a, b) => a.time.localeCompare(b.time));
+    onChange(updated);
   };
 
   const getTypeIcon = (type: string) => {
@@ -244,6 +435,14 @@ function TimelineEditor({
           onChange={(e) => setNewTime(e.target.value)}
           className="input w-24 text-sm"
         />
+        <button
+          onClick={() => setShowImport(true)}
+          className="btn-secondary px-3 py-2 flex items-center gap-1 text-sm"
+          title="从任务和习惯导入"
+        >
+          <Import size={16} />
+          导入
+        </button>
         <input
           type="text"
           value={newContent}
@@ -261,24 +460,13 @@ function TimelineEditor({
         </button>
       </div>
 
-      {/* 建议项 */}
-      {suggestedItems.length > 0 && (
-        <div className="pt-2 border-t border-gray-100">
-          <p className="text-xs text-gray-500 mb-2">从今日任务和习惯导入:</p>
-          <div className="flex flex-wrap gap-2">
-            {suggestedItems.slice(0, 5).map((item, idx) => (
-              <button
-                key={idx}
-                onClick={() => addSuggested(item)}
-                disabled={timeline.some(t => t.content === item.content && t.type === item.type)}
-                className="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                + {item.content}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* 导入弹窗 */}
+      <ImportModal
+        isOpen={showImport}
+        onClose={() => setShowImport(false)}
+        onImport={handleImport}
+        date={date}
+      />
     </div>
   );
 }
@@ -626,10 +814,21 @@ export default function Reviews() {
       let data: any;
       
       if (activeTab === 'daily') {
+        // 清理 timeline 数据，确保格式正确
+        const cleanTimeline = dailyForm.timeline.map(item => ({
+          time: item.time || '09:00',
+          content: item.content,
+          type: item.type || 'life',
+          ref_id: item.ref_id || null
+        }));
+        
         data = { 
           period: activeTab, 
           ...params, 
-          ...dailyForm,
+          timeline: cleanTimeline,
+          notes: dailyForm.notes,
+          tomorrow: dailyForm.tomorrow,
+          mood: dailyForm.mood,
           highlights: dailyForm.notes, // 兼容旧字段
           next_steps: dailyForm.tomorrow
         };
@@ -648,7 +847,20 @@ export default function Reviews() {
       showToast('复盘已保存', 'success');
     } catch (error: any) {
       console.error('保存复盘失败:', error);
-      const msg = error.response?.data?.detail || '保存失败，请检查网络';
+      // 处理不同类型的错误信息
+      let msg = '保存失败，请检查网络';
+      if (error.response?.data) {
+        const data = error.response.data;
+        if (typeof data === 'string') {
+          msg = data;
+        } else if (data.detail) {
+          msg = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail);
+        } else if (Array.isArray(data)) {
+          msg = data.map((e: any) => e.msg || e.message || JSON.stringify(e)).join(', ');
+        } else {
+          msg = JSON.stringify(data);
+        }
+      }
       showToast(msg, 'error');
     } finally {
       setSaving(false);

@@ -13,6 +13,9 @@ class TimelineItem(BaseModel):
     content: str                 # 内容描述
     type: str = "life"          # 类型: task, habit, life
     ref_id: Optional[int] = None # 关联的任务/习惯ID
+    
+    class Config:
+        from_attributes = True
 
 
 class ReviewBase(BaseModel):
