@@ -80,3 +80,8 @@ htmlcov/
 *~
 .tmp
 .temp
+
+# ==================== zip files ====================
+*.zip
+*.tar.gz
+*.tar
