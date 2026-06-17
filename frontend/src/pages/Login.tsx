@@ -5,8 +5,8 @@ interface LoginProps {
   onLogin: (user: User) => void;
 }
 
-// API 地址
-const API_URL = 'http://127.0.0.1:8000/api';
+// API 基础路径：开发环境走 Vite 代理，生产环境走 Nginx 反向代理
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
 export default function Login({ onLogin }: LoginProps) {
   const [loading, setLoading] = useState(false);
@@ -24,7 +24,7 @@ export default function Login({ onLogin }: LoginProps) {
       formData.append('password', password);
 
       // 发送请求
-      const response = await fetch(`${API_URL}/auth/login`, {
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',

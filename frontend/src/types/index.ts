@@ -56,6 +56,7 @@ export interface Task {
   due_date?: string;
   scheduled_date?: string;
   estimated_minutes?: number;
+  completed_at?: string;
   created_at: string;
 }
 

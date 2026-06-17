@@ -81,6 +81,12 @@ htmlcov/
 .tmp
 .temp
 
+# Docker / Deployment
+docker/data/
+docker/certbot/
+*.pem
+*.key
+
 # ==================== zip files ====================
 *.zip
 *.tar.gz

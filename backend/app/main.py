@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 import json
 from datetime import date, datetime, timedelta
+import os
 
 from app.db.database import SessionLocal, engine, Base
 from app import models
@@ -27,9 +28,16 @@ HABIT_FLEXIBLE = HabitFrequency.FLEXIBLE  # 灵活模式
 app = FastAPI(title="LifeFlow")
 
 # CORS
+# 开发环境默认放行 localhost；生产环境通过 CORS_ORIGINS / FRONTEND_URL 注入域名
+_default_origins = "http://localhost,http://localhost:3000,http://127.0.0.1:3000"
+_cors_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", _default_origins).split(",") if o.strip()]
+_frontend_url = os.getenv("FRONTEND_URL")
+if _frontend_url:
+    _cors_origins.append(_frontend_url)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

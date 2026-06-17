@@ -6,7 +6,7 @@ import {
   Download, FileText as FileTextIcon, Image as ImageIcon
 } from 'lucide-react';
 import { reviewsAPI, taskAPI, habitAPI } from '../services/api';
-import type { Review, TimelineItem, Task, Habit, HabitLog } from '../types';
+import type { Review, TimelineItem, Task, Habit } from '../types';
 import { format, startOfWeek, addDays, getWeek, getYear, parseISO, subDays, isSameDay } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';

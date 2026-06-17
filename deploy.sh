@@ -1,5 +1,5 @@
 #!/bin/bash
-# LifeFlow 部署脚本
+# LifeFlow 部署脚本（Docker Compose v2 版本）
 
 set -e
 
@@ -13,34 +13,24 @@ if ! command -v docker &> /dev/null; then
     systemctl start docker
 fi
 
-# 检查 Docker Compose 是否安装
-if ! command -v docker-compose &> /dev/null; then
-    echo "❌ Docker Compose 未安装，正在安装..."
-    curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-    chmod +x /usr/local/bin/docker-compose
+# 检查 Docker Compose 插件是否可用
+if ! docker compose version &> /dev/null; then
+    echo "❌ Docker Compose 插件未安装，请先安装 docker-compose-plugin"
+    exit 1
 fi
 
 echo "✅ Docker 和 Docker Compose 已安装"
 
-# 构建前端
-echo "📦 构建前端..."
-cd frontend
-npm install
-npm run build
-cd ..
-
-echo "✅ 前端构建完成"
-
-# 启动服务
+# 启动服务（前端、后端均在容器内构建）
 echo "🐳 启动 Docker 服务..."
 cd docker
-docker-compose down 2>/dev/null || true
-docker-compose up -d --build
+docker compose down 2>/dev/null || true
+docker compose up -d --build
 
 echo "✅ 服务已启动"
 
-# 等待数据库就绪
-echo "⏳ 等待数据库就绪..."
+# 等待后端就绪
+echo "⏳ 等待后端就绪..."
 sleep 5
 
 # 健康检查
@@ -54,5 +44,5 @@ if curl -s http://localhost/health | grep -q "ok"; then
     echo "  - API 文档: http://$(curl -s ip.sb)/docs"
 else
     echo "❌ 部署可能有问题，请检查日志:"
-    echo "  docker-compose logs"
+    echo "  docker compose logs"
 fi
