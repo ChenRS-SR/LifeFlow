@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 from jose import jwt
 
-from app.api.deps import get_db
+from app.api.deps import get_db, get_current_active_user
 from app.core.config import get_settings
 from app import models, schemas
 
@@ -70,16 +70,16 @@ def register(user_in: schemas.UserCreate, db: Session = Depends(get_db)):
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     """用户登录"""
     print(f"登录请求: {form_data.username}")
-    
+
     user = db.query(models.User).filter(models.User.username == form_data.username).first()
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="用户名或密码错误")
-    
+
     token = create_access_token(
         data={"sub": str(user.id)},
         expires_delta=timedelta(days=7)
     )
-    
+
     return {
         "access_token": token,
         "token_type": "bearer",
@@ -87,6 +87,20 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
             "id": user.id,
             "username": user.username,
             "email": user.email,
-            "is_active": user.is_active
+            "is_active": user.is_active,
+            "created_at": user.created_at.isoformat() if user.created_at else None
         }
+    }
+
+
+@router.get("/me")
+def get_me(current_user: models.User = Depends(get_current_active_user)):
+    """获取当前登录用户信息"""
+    return {
+        "id": current_user.id,
+        "username": current_user.username,
+        "email": current_user.email,
+        "is_active": current_user.is_active,
+        "life_vision": current_user.life_vision,
+        "created_at": current_user.created_at.isoformat() if current_user.created_at else None
     }

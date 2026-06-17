@@ -7,10 +7,12 @@ from typing import Any, Dict
 from datetime import date, timedelta
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
 
 from app.api.deps import get_db, get_current_active_user
-from app import models, schemas
+from app import models
+from app.models.task import TaskStatus, TaskType
+from app.models.project import ProjectStatus
+from app.models.goal import GoalStatus
 
 router = APIRouter(prefix="/dashboard", tags=["仪表盘"])
 
@@ -22,90 +24,128 @@ def get_dashboard_stats(
 ) -> Dict[str, Any]:
     """
     获取仪表盘统计数据
-    
-    包括：
-    - 今日待办数量
-    - 进行中的目标数量
-    - 活跃习惯数量
-    - 今日打卡情况
-    - 任务完成情况统计
+
+    与前端 Dashboard.tsx 期望的数据结构保持一致
     """
     today = date.today()
-    
-    # 今日待办
-    today_tasks = db.query(models.Task).filter(
-        models.Task.user_id == current_user.id,
-        models.Task.scheduled_date == today,
-        models.Task.status != models.TaskStatus.COMPLETED
-    ).count()
-    
-    # 进行中目标
-    active_goals = db.query(models.Goal).filter(
-        models.Goal.user_id == current_user.id,
-        models.Goal.status == models.GoalStatus.ACTIVE
-    ).count()
-    
-    # 活跃习惯
-    active_habits = db.query(models.Habit).filter(
-        models.Habit.user_id == current_user.id,
-        models.Habit.is_active == True
-    ).count()
-    
-    # 今日打卡情况
-    habits = db.query(models.Habit).filter(
-        models.Habit.user_id == current_user.id,
-        models.Habit.is_active == True
-    ).all()
-    
-    completed_habits = 0
-    for habit in habits:
-        log = db.query(models.HabitLog).filter(
-            models.HabitLog.habit_id == habit.id,
-            models.HabitLog.date == today
-        ).first()
-        if log and log.count >= habit.target_times:
-            completed_habits += 1
-    
-    # 本周任务完成情况
     week_start = today - timedelta(days=today.weekday())
-    week_tasks_total = db.query(models.Task).filter(
+
+    # 1. 今日待办任务（计划今天做 或 截止今天 或 已逾期）
+    today_pending = db.query(models.Task).filter(
         models.Task.user_id == current_user.id,
-        models.Task.created_at >= week_start
+        models.Task.status != TaskStatus.COMPLETED,
+        models.Task.is_inbox == 0,
+        ((models.Task.scheduled_date == today) |
+         (models.Task.due_date == today) |
+         ((models.Task.due_date < today) & (models.Task.due_date != None)))
     ).count()
-    
+
+    # 2. 今日已完成任务
+    today_completed = db.query(models.Task).filter(
+        models.Task.user_id == current_user.id,
+        models.Task.status == TaskStatus.COMPLETED,
+        models.Task.completed_at >= today
+    ).count()
+
+    # 3. 逾期任务总数
+    overdue_count = db.query(models.Task).filter(
+        models.Task.user_id == current_user.id,
+        models.Task.status != TaskStatus.COMPLETED,
+        models.Task.due_date < today,
+        models.Task.due_date != None
+    ).count()
+
+    # 4. 收集箱未整理任务
+    inbox_count = db.query(models.Task).filter(
+        models.Task.user_id == current_user.id,
+        models.Task.task_type == TaskType.INBOX,
+        models.Task.status != TaskStatus.COMPLETED
+    ).count()
+
+    # 5. 本周数据
     week_tasks_completed = db.query(models.Task).filter(
         models.Task.user_id == current_user.id,
-        models.Task.status == models.TaskStatus.COMPLETED,
+        models.Task.status == TaskStatus.COMPLETED,
         models.Task.completed_at >= week_start
     ).count()
-    
-    # 近7天打卡热力图数据
-    heatmap_data = []
-    for i in range(6, -1, -1):
-        check_date = today - timedelta(days=i)
-        
-        # 计算当天的总打卡次数
-        total_checks = db.query(func.sum(models.HabitLog.count)).filter(
-            models.HabitLog.user_id == current_user.id,
-            models.HabitLog.date == check_date
-        ).scalar() or 0
-        
-        heatmap_data.append({
-            "date": check_date.isoformat(),
-            "count": int(total_checks)
-        })
-    
+
+    week_tasks_total = db.query(models.Task).filter(
+        models.Task.user_id == current_user.id,
+        ((models.Task.scheduled_date >= week_start) & (models.Task.scheduled_date <= today)) |
+        ((models.Task.due_date >= week_start) & (models.Task.due_date <= today))
+    ).count()
+
+    # 6. 活跃目标数
+    active_goals = db.query(models.Goal).filter(
+        models.Goal.user_id == current_user.id,
+        models.Goal.status == GoalStatus.ACTIVE
+    ).count()
+
+    # 7. 习惯统计
+    total_habits = db.query(models.Habit).filter(
+        models.Habit.user_id == current_user.id,
+        models.Habit.is_active == True,
+        models.Habit.is_archived == False
+    ).count()
+
+    # 8. 今日习惯打卡情况
+    today_habit_logs = db.query(models.HabitLog).filter(
+        models.HabitLog.user_id == current_user.id,
+        models.HabitLog.date == today
+    ).all()
+    completed_habits = len([log for log in today_habit_logs if log.count > 0])
+
+    # 9. 项目列表（带进度）
+    projects = db.query(models.Project).filter(
+        models.Project.user_id == current_user.id,
+        models.Project.status.in_([ProjectStatus.ACTIVE, ProjectStatus.PLANNING])
+    ).order_by(models.Project.progress.desc()).limit(5).all()
+
+    project_list = [{
+        "id": p.id,
+        "name": p.name,
+        "progress": round(p.progress, 1),
+        "status": p.status.value
+    } for p in projects]
+
+    # 10. 今日 Top 任务
+    top_tasks = db.query(models.Task).filter(
+        models.Task.user_id == current_user.id,
+        models.Task.status != TaskStatus.COMPLETED,
+        models.Task.is_inbox == 0,
+        ((models.Task.scheduled_date == today) | (models.Task.due_date == today))
+    ).order_by(
+        models.Task.priority.desc(),
+        models.Task.created_at.desc()
+    ).limit(3).all()
+
+    top_task_list = [{
+        "id": t.id,
+        "title": t.title,
+        "priority": t.priority.value if hasattr(t.priority, 'value') else str(t.priority),
+        "due_date": t.due_date.isoformat() if t.due_date else None
+    } for t in top_tasks]
+
     return {
         "today": {
-            "tasks_count": today_tasks,
-            "completed_habits": completed_habits,
-            "total_habits": len(habits)
+            "pending": today_pending,
+            "completed": today_completed,
+            "overdue": overdue_count,
+            "inbox": inbox_count
         },
-        "overview": {
-            "active_goals": active_goals,
-            "active_habits": active_habits,
-            "week_tasks_total": week_tasks_total,
-            "week_tasks_completed": week_tasks_completed
+        "week": {
+            "total": week_tasks_total,
+            "completed": week_tasks_completed,
+            "progress": round((week_tasks_completed / week_tasks_total * 100), 1) if week_tasks_total > 0 else 0
         },
-        "heatmap": heatmap_data
+        "goals": {
+            "active": active_goals
+        },
+        "habits": {
+            "total": total_habits,
+            "completed": completed_habits
+        },
+        "projects": project_list,
+        "top_tasks": top_task_list,
+        "heatmap": []
     }

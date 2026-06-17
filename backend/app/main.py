@@ -1,13 +1,12 @@
 """
 LifeFlow - 完整版本（含项目和增强任务管理）
 """
-from fastapi import FastAPI, Form, Depends, HTTPException, Query
+from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from pydantic import BaseModel
 from typing import Optional, List
-import hashlib
 import json
 from datetime import date, datetime, timedelta
 
@@ -17,7 +16,9 @@ from app.models.habit import HabitFrequency
 from app.models.task import TaskType, TaskStatus, TaskPriority
 from app.models.project import ProjectStatus
 from app.models.goal import GoalStatus
-from app.api import reviews as reviews_router
+from app.api import auth as auth_router, dashboard as dashboard_router, reviews as reviews_router
+from app.api.deps import get_current_active_user
+from app.api.auth import get_password_hash, verify_password
 
 # HabitFrequency 值映射
 HABIT_CUSTOM = HabitFrequency.CUSTOM  # 固定日期（自定义）
@@ -35,6 +36,8 @@ app.add_middleware(
 )
 
 # 注册路由
+app.include_router(auth_router.router, prefix="/api")
+app.include_router(dashboard_router.router, prefix="/api")
 app.include_router(reviews_router.router, prefix="/api")
 
 def get_db():
@@ -44,170 +47,10 @@ def get_db():
     finally:
         db.close()
 
-def simple_hash(password: str) -> str:
-    return hashlib.sha256(password.encode()).hexdigest()
-
 # ==================== 健康检查 ====================
 @app.get("/health")
 def health():
     return {"status": "ok", "version": "1.0.0"}
-
-# ==================== 认证 ====================
-@app.get("/api/auth/me")
-def get_me(db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.username == "admin").first()
-    if not user:
-        raise HTTPException(status_code=404, detail="用户不存在")
-    return {
-        "id": user.id,
-        "username": user.username,
-        "email": user.email,
-        "is_active": user.is_active,
-        "created_at": user.created_at.isoformat() if user.created_at else None
-    }
-
-@app.post("/api/auth/login")
-def login(username: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.username == username).first()
-    if not user or user.hashed_password != simple_hash(password):
-        return {"error": "用户名或密码错误"}
-    
-    return {
-        "access_token": f"token_{user.id}",
-        "token_type": "bearer",
-        "user": {
-            "id": user.id,
-            "username": user.username,
-            "email": user.email,
-            "is_active": user.is_active,
-            "created_at": user.created_at.isoformat() if user.created_at else None
-        }
-    }
-
-# ==================== 仪表盘 ====================
-@app.get("/api/dashboard/stats")
-def dashboard(db: Session = Depends(get_db)):
-    today = date.today()
-    week_start = today - timedelta(days=today.weekday())
-    
-    # 1. 今日待办任务（计划今天做 或 截止今天 或 已逾期）
-    today_pending = db.query(models.Task).filter(
-        models.Task.user_id == 1,
-        models.Task.status != TaskStatus.COMPLETED,
-        models.Task.is_inbox == 0,
-        ((models.Task.scheduled_date == today) | 
-         (models.Task.due_date == today) |
-         ((models.Task.due_date < today) & (models.Task.due_date != None)))
-    ).count()
-    
-    # 2. 今日已完成任务
-    today_completed = db.query(models.Task).filter(
-        models.Task.user_id == 1,
-        models.Task.status == TaskStatus.COMPLETED,
-        models.Task.completed_at >= today
-    ).count()
-    
-    # 3. 逾期任务总数
-    overdue_count = db.query(models.Task).filter(
-        models.Task.user_id == 1,
-        models.Task.status != TaskStatus.COMPLETED,
-        models.Task.due_date < today,
-        models.Task.due_date != None
-    ).count()
-    
-    # 4. 收集箱未整理任务
-    inbox_count = db.query(models.Task).filter(
-        models.Task.user_id == 1,
-        models.Task.task_type == TaskType.INBOX,
-        models.Task.status != TaskStatus.COMPLETED
-    ).count()
-    
-    # 5. 本周数据
-    week_tasks_completed = db.query(models.Task).filter(
-        models.Task.user_id == 1,
-        models.Task.status == TaskStatus.COMPLETED,
-        models.Task.completed_at >= week_start
-    ).count()
-    
-    week_tasks_total = db.query(models.Task).filter(
-        models.Task.user_id == 1,
-        ((models.Task.scheduled_date >= week_start) & (models.Task.scheduled_date <= today)) |
-        ((models.Task.due_date >= week_start) & (models.Task.due_date <= today))
-    ).count()
-    
-    # 6. 活跃目标数
-    active_goals = db.query(models.Goal).filter(
-        models.Goal.user_id == 1,
-        models.Goal.status == GoalStatus.ACTIVE
-    ).count()
-    
-    # 7. 习惯统计
-    total_habits = db.query(models.Habit).filter(
-        models.Habit.is_active == True,
-        models.Habit.is_archived == False
-    ).count()
-    
-    # 8. 今日习惯打卡情况
-    today_habit_logs = db.query(models.HabitLog).filter(
-        models.HabitLog.user_id == 1,
-        models.HabitLog.date == today
-    ).all()
-    completed_habits = len([log for log in today_habit_logs if log.count > 0])
-    
-    # 9. 项目列表（带进度）
-    projects = db.query(models.Project).filter(
-        models.Project.user_id == 1,
-        models.Project.status.in_([ProjectStatus.ACTIVE, ProjectStatus.PLANNING])
-    ).order_by(models.Project.progress.desc()).limit(5).all()
-    
-    project_list = [{
-        "id": p.id,
-        "name": p.name,
-        "progress": round(p.progress, 1),
-        "status": p.status.value
-    } for p in projects]
-    
-    # 10. 今日 Top 任务
-    top_tasks = db.query(models.Task).filter(
-        models.Task.user_id == 1,
-        models.Task.status != TaskStatus.COMPLETED,
-        models.Task.is_inbox == 0,
-        ((models.Task.scheduled_date == today) | (models.Task.due_date == today))
-    ).order_by(
-        models.Task.priority.desc(),
-        models.Task.created_at.desc()
-    ).limit(3).all()
-    
-    top_task_list = [{
-        "id": t.id,
-        "title": t.title,
-        "priority": t.priority.value if hasattr(t.priority, 'value') else str(t.priority),
-        "due_date": t.due_date.isoformat() if t.due_date else None
-    } for t in top_tasks]
-    
-    return {
-        "today": {
-            "pending": today_pending,
-            "completed": today_completed,
-            "overdue": overdue_count,
-            "inbox": inbox_count
-        },
-        "week": {
-            "total": week_tasks_total,
-            "completed": week_tasks_completed,
-            "progress": round((week_tasks_completed / week_tasks_total * 100), 1) if week_tasks_total > 0 else 0
-        },
-        "goals": {
-            "active": active_goals
-        },
-        "habits": {
-            "total": total_habits,
-            "completed": completed_habits
-        },
-        "projects": project_list,
-        "top_tasks": top_task_list,
-        "heatmap": []
-    }
 
 # ==================== 项目管理 ====================
 class ProjectCreate(BaseModel):
@@ -216,10 +59,10 @@ class ProjectCreate(BaseModel):
     target_date: Optional[str] = None
 
 @app.get("/api/projects/")
-def list_projects(db: Session = Depends(get_db)):
+def list_projects(current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)):
     """获取所有项目"""
     projects = db.query(models.Project).filter(
-        models.Project.user_id == 1
+        models.Project.user_id == current_user.id
     ).order_by(models.Project.created_at.desc()).all()
     
     result = []
@@ -246,7 +89,7 @@ def list_projects(db: Session = Depends(get_db)):
     return result
 
 @app.get("/api/projects/{project_id}")
-def get_project(project_id: int, db: Session = Depends(get_db)):
+def get_project(project_id: int, current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)):
     """获取项目详情"""
     p = db.query(models.Project).filter(models.Project.id == project_id).first()
     if not p:
@@ -287,10 +130,10 @@ def get_project(project_id: int, db: Session = Depends(get_db)):
     }
 
 @app.post("/api/projects/")
-def create_project(project: ProjectCreate, db: Session = Depends(get_db)):
+def create_project(project: ProjectCreate, current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)):
     """创建项目"""
     db_project = models.Project(
-        user_id=1,
+        user_id=current_user.id,
         name=project.name,
         description=project.description,
         status=ProjectStatus.ACTIVE,
@@ -317,7 +160,7 @@ class ProjectUpdate(BaseModel):
 def update_project(
     project_id: int,
     data: ProjectUpdate,
-    db: Session = Depends(get_db)
+    current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)
 ):
     """更新项目"""
     p = db.query(models.Project).filter(models.Project.id == project_id).first()
@@ -354,7 +197,7 @@ def update_project(
     }
 
 @app.delete("/api/projects/{project_id}")
-def delete_project(project_id: int, db: Session = Depends(get_db)):
+def delete_project(project_id: int, current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)):
     """删除项目"""
     p = db.query(models.Project).filter(models.Project.id == project_id).first()
     if not p:
@@ -372,10 +215,10 @@ def delete_project(project_id: int, db: Session = Depends(get_db)):
 def list_goals(
     period: Optional[str] = Query(None),
     year: Optional[int] = Query(None),
-    db: Session = Depends(get_db)
+    current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)
 ):
     """获取目标列表"""
-    query = db.query(models.Goal).filter(models.Goal.user_id == 1)
+    query = db.query(models.Goal).filter(models.Goal.user_id == current_user.id)
     
     if period:
         query = query.filter(models.Goal.period == period)
@@ -409,11 +252,11 @@ def list_goals(
 @app.post("/api/goals/")
 def create_goal(
     goal: dict,
-    db: Session = Depends(get_db)
+    current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)
 ):
     """创建目标"""
     db_goal = models.Goal(
-        user_id=1,
+        user_id=current_user.id,
         title=goal.get("title", ""),
         description=goal.get("description"),
         period=goal.get("period", "month"),
@@ -439,7 +282,7 @@ def create_goal(
 def update_goal(
     goal_id: int,
     goal: dict,
-    db: Session = Depends(get_db)
+    current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)
 ):
     """更新目标"""
     g = db.query(models.Goal).filter(models.Goal.id == goal_id).first()
@@ -469,7 +312,7 @@ def update_goal(
     }
 
 @app.delete("/api/goals/{goal_id}")
-def delete_goal(goal_id: int, db: Session = Depends(get_db)):
+def delete_goal(goal_id: int, current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)):
     """删除目标"""
     g = db.query(models.Goal).filter(models.Goal.id == goal_id).first()
     if not g:
@@ -495,11 +338,11 @@ class TaskCreate(BaseModel):
 @app.get("/api/tasks/")
 def list_tasks(
     view: str = Query("all"),  # all/today/week/overdue/inbox/todo/completed
-    db: Session = Depends(get_db)
+    current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)
 ):
     """获取任务列表（支持多视图）"""
     today = date.today()
-    query = db.query(models.Task).filter(models.Task.user_id == 1)
+    query = db.query(models.Task).filter(models.Task.user_id == current_user.id)
     
     if view == "inbox":
         # 收件箱：未分类的任务（task_type=inbox 且未完成的）
@@ -575,7 +418,7 @@ def list_tasks(
 def get_week_calendar(
     year: int = Query(None),
     week: int = Query(None),
-    db: Session = Depends(get_db)
+    current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)
 ):
     """获取本周日历视图数据"""
     if year is None or week is None:
@@ -591,7 +434,7 @@ def get_week_calendar(
     result = []
     for d in week_dates:
         tasks = db.query(models.Task).filter(
-            models.Task.user_id == 1,
+            models.Task.user_id == current_user.id,
             models.Task.status != TaskStatus.COMPLETED,
             models.Task.is_inbox == 0,
             models.Task.scheduled_date == d
@@ -615,14 +458,14 @@ def get_week_calendar(
     }
 
 @app.get("/api/tasks/stats")
-def get_task_stats(db: Session = Depends(get_db)):
+def get_task_stats(current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)):
     """获取任务统计（用于已完成视图）"""
     today = date.today()
     week_start = today - timedelta(days=today.weekday())
     
     # 本周完成任务数
     week_completed = db.query(models.Task).filter(
-        models.Task.user_id == 1,
+        models.Task.user_id == current_user.id,
         models.Task.status == TaskStatus.COMPLETED,
         models.Task.completed_at >= week_start
     ).count()
@@ -632,7 +475,7 @@ def get_task_stats(db: Session = Depends(get_db)):
         models.Task.project_id,
         func.count(models.Task.id).label("count")
     ).filter(
-        models.Task.user_id == 1,
+        models.Task.user_id == current_user.id,
         models.Task.status == TaskStatus.COMPLETED
     ).group_by(models.Task.project_id).all()
     
@@ -641,7 +484,7 @@ def get_task_stats(db: Session = Depends(get_db)):
         models.Task.priority,
         func.count(models.Task.id).label("count")
     ).filter(
-        models.Task.user_id == 1,
+        models.Task.user_id == current_user.id,
         models.Task.status == TaskStatus.COMPLETED
     ).group_by(models.Task.priority).all()
     
@@ -661,7 +504,7 @@ def parse_date(date_str: Optional[str]) -> Optional[date]:
         return None
 
 @app.post("/api/tasks/")
-def create_task(task: TaskCreate, db: Session = Depends(get_db)):
+def create_task(task: TaskCreate, current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)):
     """创建任务"""
     priority_map = {1: TaskPriority.LOW, 2: TaskPriority.MEDIUM, 3: TaskPriority.HIGH, 4: TaskPriority.URGENT}
     task_priority = priority_map.get(task.priority, TaskPriority.MEDIUM)
@@ -682,7 +525,7 @@ def create_task(task: TaskCreate, db: Session = Depends(get_db)):
             scheduled_date = today + timedelta(days=365)
     
     db_task = models.Task(
-        user_id=1,
+        user_id=current_user.id,
         title=task.title,
         description=task.description,
         task_type=TaskType(task.task_type) if task.task_type else TaskType.INBOX,
@@ -709,7 +552,7 @@ def create_task(task: TaskCreate, db: Session = Depends(get_db)):
 def update_task(
     task_id: int,
     data: dict,
-    db: Session = Depends(get_db)
+    current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)
 ):
     """更新任务"""
     t = db.query(models.Task).filter(models.Task.id == task_id).first()
@@ -759,7 +602,7 @@ class CompleteTaskRequest(BaseModel):
 def complete_task(
     task_id: int,
     data: Optional[CompleteTaskRequest] = None,
-    db: Session = Depends(get_db)
+    current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)
 ):
     """完成任务"""
     t = db.query(models.Task).filter(models.Task.id == task_id).first()
@@ -795,7 +638,7 @@ def complete_task(
     return {"id": t.id, "status": t.status.value, "actual_pomodoros": t.actual_pomodoros}
 
 @app.delete("/api/tasks/{task_id}")
-def delete_task(task_id: int, db: Session = Depends(get_db)):
+def delete_task(task_id: int, current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)):
     """删除任务"""
     t = db.query(models.Task).filter(models.Task.id == task_id).first()
     if not t:
@@ -807,7 +650,7 @@ def delete_task(task_id: int, db: Session = Depends(get_db)):
 
 # ==================== 习惯管理 ====================
 @app.get("/api/habits/")
-def list_habits(db: Session = Depends(get_db)):
+def list_habits(current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)):
     habits = db.query(models.Habit).filter(
         models.Habit.is_active == True,
         models.Habit.is_archived == False
@@ -828,7 +671,7 @@ def list_habits(db: Session = Depends(get_db)):
     } for h in habits]
 
 @app.get("/api/habits/week")
-def get_habits_week(year: int = Query(None), week: int = Query(None), db: Session = Depends(get_db)):
+def get_habits_week(year: int = Query(None), week: int = Query(None), current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)):
     if year is None or week is None:
         today = date.today()
         year, week, _ = today.isocalendar()
@@ -915,9 +758,12 @@ class HabitToggleRequest(BaseModel):
     count: Optional[int] = None
 
 @app.post("/api/habits/toggle")
-def toggle_habit(data: HabitToggleRequest, db: Session = Depends(get_db)):
+def toggle_habit(data: HabitToggleRequest, current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)):
     """习惯打卡/取消打卡"""
-    habit = db.query(models.Habit).filter(models.Habit.id == data.habit_id).first()
+    habit = db.query(models.Habit).filter(
+        models.Habit.user_id == current_user.id,
+        models.Habit.id == data.habit_id
+    ).first()
     if not habit:
         raise HTTPException(status_code=404, detail="习惯不存在")
     
@@ -966,7 +812,7 @@ class HabitCreateRequest(BaseModel):
     allow_overflow: bool = False
 
 @app.post("/api/habits/")
-def create_habit_api(habit: HabitCreateRequest, db: Session = Depends(get_db)):
+def create_habit_api(habit: HabitCreateRequest, current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)):
     """创建习惯"""
     freq_map = {
         "daily": HabitFrequency.DAILY,
@@ -977,7 +823,7 @@ def create_habit_api(habit: HabitCreateRequest, db: Session = Depends(get_db)):
     }
     
     db_habit = models.Habit(
-        user_id=1,  # 默认用户
+        user_id=current_user.id,  # 默认用户
         name=habit.name,
         icon=habit.icon,
         color=habit.color,
@@ -999,7 +845,7 @@ def create_habit_api(habit: HabitCreateRequest, db: Session = Depends(get_db)):
 def update_habit_api(
     habit_id: int,
     habit: HabitCreateRequest,
-    db: Session = Depends(get_db)
+    current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)
 ):
     """更新习惯"""
     h = db.query(models.Habit).filter(models.Habit.id == habit_id).first()
@@ -1028,7 +874,7 @@ def update_habit_api(
     return {"id": h.id, "name": h.name}
 
 @app.delete("/api/habits/{habit_id}")
-def delete_habit_api(habit_id: int, db: Session = Depends(get_db)):
+def delete_habit_api(habit_id: int, current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)):
     """删除习惯"""
     h = db.query(models.Habit).filter(models.Habit.id == habit_id).first()
     if not h:
@@ -1072,7 +918,7 @@ def _update_project_progress(db: Session, project_id: int):
 
 
 @app.get("/api/projects/{project_id}/goals")
-def list_project_goals(project_id: int, db: Session = Depends(get_db)):
+def list_project_goals(project_id: int, current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)):
     """获取项目的目标列表"""
     goals = db.query(models.ProjectGoal).filter(
         models.ProjectGoal.project_id == project_id
@@ -1094,7 +940,7 @@ def list_project_goals(project_id: int, db: Session = Depends(get_db)):
 def create_project_goal(
     project_id: int, 
     req: ProjectGoalCreateRequest, 
-    db: Session = Depends(get_db)
+    current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)
 ):
     """创建项目目标"""
     project = db.query(models.Project).filter(models.Project.id == project_id).first()
@@ -1103,7 +949,7 @@ def create_project_goal(
     
     goal = models.ProjectGoal(
         project_id=project_id,
-        user_id=1,  # 默认用户
+        user_id=current_user.id,  # 默认用户
         title=req.title,
         description=req.description,
         sort_order=req.sort_order,
@@ -1131,7 +977,7 @@ def update_project_goal(
     project_id: int,
     goal_id: int,
     req: ProjectGoalUpdateRequest,
-    db: Session = Depends(get_db)
+    current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)
 ):
     """更新项目目标"""
     goal = db.query(models.ProjectGoal).filter(
@@ -1174,7 +1020,7 @@ def update_project_goal(
 def delete_project_goal(
     project_id: int,
     goal_id: int,
-    db: Session = Depends(get_db)
+    current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)
 ):
     """删除项目目标"""
     goal = db.query(models.ProjectGoal).filter(
@@ -1198,7 +1044,7 @@ def delete_project_goal(
 def toggle_project_goal(
     project_id: int,
     goal_id: int,
-    db: Session = Depends(get_db)
+    current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)
 ):
     """切换目标完成状态"""
     goal = db.query(models.ProjectGoal).filter(
@@ -1232,7 +1078,7 @@ class ReorderGoalsRequest(BaseModel):
 def reorder_project_goals(
     project_id: int,
     req: ReorderGoalsRequest,
-    db: Session = Depends(get_db)
+    current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)
 ):
     """批量更新目标排序"""
     # 验证项目存在
@@ -1265,13 +1111,20 @@ def init_default_data():
             user = models.User(
                 username="admin",
                 email="admin@example.com",
-                hashed_password=simple_hash("admin123"),
+                hashed_password=get_password_hash("admin123"),
                 is_active=True
             )
             db.add(user)
             db.commit()
             db.refresh(user)
             print("[INIT] 创建默认用户: admin / admin123")
+        elif not user.hashed_password.startswith(("$2a$", "$2b$", "$2y$")):
+            # 兼容旧版 SHA256 密码，自动升级为 bcrypt
+            user.hashed_password = get_password_hash("admin123")
+            db.commit()
+            print("[INIT] 已升级默认用户密码哈希")
+
+        # 创建默认习惯（仅在用户没有习惯时创建）
         
         # 创建默认习惯（仅在用户没有习惯时创建）
         existing_habits = db.query(models.Habit).filter(models.Habit.user_id == user.id).first()
