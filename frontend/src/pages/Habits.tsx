@@ -177,27 +177,27 @@ export default function Habits() {
   return (
     <div>
       {/* 标题栏 */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">习惯追踪</h2>
           <p className="text-gray-500 mt-1">本周打卡情况 · 点击打卡</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 md:gap-3">
           <button
             onClick={() => setEditMode(!editMode)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm ${
               editMode ? 'bg-primary-100 text-primary-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
             }`}
           >
             <Settings size={18} />
-            <span>{editMode ? '退出编辑' : '编辑历史'}</span>
+            <span className="hidden sm:inline">{editMode ? '退出编辑' : '编辑历史'}</span>
           </button>
-          
+
           <div className="flex items-center gap-2 bg-white rounded-lg border border-gray-200">
             <button onClick={() => changeWeek(-1)} className="p-2 hover:bg-gray-100 rounded-l-lg">
               <ChevronLeft size={20} />
             </button>
-            <span className="px-4 font-medium text-gray-700 min-w-[150px] text-center">
+            <span className="px-2 md:px-4 font-medium text-gray-700 min-w-[120px] md:min-w-[150px] text-center text-sm">
               {weekDates.length > 0 && (
                 `${format(new Date(weekDates[0]), 'MM/dd')} - ${format(new Date(weekDates[6]), 'MM/dd')}`
               )}
@@ -206,10 +206,10 @@ export default function Habits() {
               <ChevronRight size={20} />
             </button>
           </div>
-          
-          <button onClick={openAddModal} className="btn-primary flex items-center gap-2">
+
+          <button onClick={openAddModal} className="btn-primary flex items-center gap-2 px-3 py-2 text-sm">
             <Plus size={20} />
-            新建习惯
+            <span className="hidden sm:inline">新建习惯</span>
           </button>
         </div>
       </div>
@@ -228,31 +228,31 @@ export default function Habits() {
           <table className="w-full">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-600 w-56">习惯</th>
+                <th className="px-2 md:px-4 py-3 text-left text-xs md:text-sm font-medium text-gray-600 w-40 md:w-56">习惯</th>
                 {WEEKDAYS.map((day, i) => {
                   const dateStr = weekDates[i];
                   const isTodayCol = dateStr && isToday(dateStr);
                   return (
-                    <th 
-                      key={i} 
-                      className={`px-2 py-3 text-center text-sm font-medium w-20 ${
-                        isTodayCol 
-                          ? 'bg-primary-100 text-primary-700 border-b-2 border-primary-500' 
+                    <th
+                      key={i}
+                      className={`px-1 md:px-2 py-3 text-center text-xs md:text-sm font-medium w-14 md:w-20 ${
+                        isTodayCol
+                          ? 'bg-primary-100 text-primary-700 border-b-2 border-primary-500'
                           : 'text-gray-600'
                       }`}
                     >
                       <div className={isTodayCol ? 'font-bold' : ''}>{day}</div>
-                      <div className={`text-xs ${isTodayCol ? 'text-primary-600' : 'text-gray-400'}`}>
+                      <div className={`text-[10px] md:text-xs ${isTodayCol ? 'text-primary-600' : 'text-gray-400'}`}>
                         {dateStr && format(new Date(dateStr), 'MM/dd')}
                       </div>
                       {isTodayCol && (
-                        <div className="text-xs text-primary-600 font-medium mt-1">今天</div>
+                        <div className="text-[10px] md:text-xs text-primary-600 font-medium mt-1">今天</div>
                       )}
                     </th>
                   );
                 })}
-                <th className="px-4 py-3 text-center text-sm font-medium text-gray-600 w-20">完成率</th>
-                <th className="px-4 py-3 text-center text-sm font-medium text-gray-600 w-24">操作</th>
+                <th className="px-2 md:px-4 py-3 text-center text-xs md:text-sm font-medium text-gray-600 w-14 md:w-20">完成率</th>
+                <th className="px-2 md:px-4 py-3 text-center text-xs md:text-sm font-medium text-gray-600 w-20 md:w-24">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -264,17 +264,17 @@ export default function Habits() {
                   }`}
                 >
                   {/* 习惯名称 */}
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <span 
-                        className="w-10 h-10 rounded-lg flex items-center justify-center text-xl"
+                  <td className="px-2 md:px-4 py-3">
+                    <div className="flex items-center gap-2 md:gap-3">
+                      <span
+                        className="w-9 h-9 md:w-10 md:h-10 rounded-lg flex items-center justify-center text-base md:text-xl"
                         style={{ backgroundColor: `${item.habit.color}20`, color: item.habit.color }}
                       >
                         {item.habit.icon}
                       </span>
-                      <div>
-                        <p className="font-medium text-gray-900">{item.habit.name}</p>
-                        <p className="text-xs text-gray-500">
+                      <div className="min-w-0">
+                        <p className="font-medium text-gray-900 truncate text-sm md:text-base">{item.habit.name}</p>
+                        <p className="text-[10px] md:text-xs text-gray-500">
                           {getFrequencyText(item.habit)}
                         </p>
                       </div>
@@ -287,19 +287,19 @@ export default function Habits() {
                     const isTodayCol = dateStr && isToday(dateStr);
                     
                     return (
-                      <td 
-                        key={idx} 
-                        className={`px-2 py-3 ${isTodayCol ? 'bg-primary-50/50' : ''}`}
+                      <td
+                        key={idx}
+                        className={`px-1 md:px-2 py-3 ${isTodayCol ? 'bg-primary-50/50' : ''}`}
                       >
                         {status.target > 0 || item.habit.allow_overflow ? (
                           <button
                             onClick={() => canEdit(status.date) && toggleCheck(
-                              item.habit.id, 
-                              status.date, 
+                              item.habit.id,
+                              status.date,
                               status
                             )}
                             disabled={!canEdit(status.date)}
-                            className={`w-10 h-10 rounded-lg mx-auto flex items-center justify-center transition-all ${
+                            className={`w-9 h-9 md:w-10 md:h-10 rounded-lg mx-auto flex items-center justify-center transition-all ${
                               status.completed
                                 ? 'bg-green-500 text-white shadow-md'
                                 : isTodayCol
@@ -315,7 +315,7 @@ export default function Habits() {
                             )}
                           </button>
                         ) : (
-                          <div className="w-10 h-10 mx-auto flex items-center justify-center text-gray-300 text-xs">
+                          <div className="w-9 h-9 md:w-10 md:h-10 mx-auto flex items-center justify-center text-gray-300 text-xs">
                             -
                           </div>
                         )}
@@ -324,32 +324,32 @@ export default function Habits() {
                   })}
                   
                   {/* 完成率 */}
-                  <td className="px-4 py-3">
+                  <td className="px-2 md:px-4 py-3">
                     <div className="text-center">
-                      <span className={`text-lg font-bold ${
+                      <span className={`text-base md:text-lg font-bold ${
                         item.is_perfect || item.is_overflow ? 'text-green-600' : 'text-gray-700'
                       }`}>
                         {item.weekly_rate}%
                       </span>
                       {item.is_overflow && (
-                        <div className="text-xs text-green-600">超额!</div>
+                        <div className="text-[10px] md:text-xs text-green-600">超额!</div>
                       )}
                     </div>
                   </td>
-                  
+
                   {/* 操作按钮 */}
-                  <td className="px-4 py-3">
-                    <div className="flex items-center justify-center gap-2">
+                  <td className="px-2 md:px-4 py-3">
+                    <div className="flex items-center justify-center gap-1 md:gap-2">
                       <button
                         onClick={() => openEditModal(item.habit)}
-                        className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        className="p-1.5 md:p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                         title="编辑"
                       >
                         <Edit2 size={16} />
                       </button>
                       <button
                         onClick={() => setShowDeleteConfirm(item.habit.id)}
-                        className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        className="p-1.5 md:p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                         title="删除"
                       >
                         <Trash2 size={16} />

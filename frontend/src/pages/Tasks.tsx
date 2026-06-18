@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { 
-  Plus, Calendar, Inbox, CheckCircle2, Circle, Clock, AlertCircle, 
-  Folder, List, Edit3, 
+import {
+  Plus, Calendar, Inbox, CheckCircle2, Circle, Clock, AlertCircle,
+  Folder, List, Edit3,
   X, Filter, Settings, Trash2, Save, BookOpen,
-  ArrowLeft, CheckSquare, ChevronLeft, ChevronRight
+  ArrowLeft, CheckSquare, ChevronLeft, ChevronRight, Menu
 } from 'lucide-react';
 import { format, startOfWeek, endOfWeek, eachDayOfInterval, isSameDay, isToday, isPast, parseISO, isWithinInterval } from 'date-fns';
 import { taskAPI, projectAPI } from '../services/api';
@@ -142,7 +142,10 @@ export default function Tasks() {
   
   // 项目搜索
   const [projectSearch, setProjectSearch] = useState('');
-  
+
+  // 移动端侧边栏开关
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const closeSidebar = () => setSidebarOpen(false);
   // 筛选状态
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [dateRange, setDateRange] = useState<{start?: string; end?: string}>({});
@@ -841,90 +844,92 @@ export default function Tasks() {
       )}
       
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              {visibleColumns.includes('status') && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 w-16">状态</th>}
-              {visibleColumns.includes('title') && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">任务</th>}
-              {visibleColumns.includes('task_type') && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 w-20">类型</th>}
-              {visibleColumns.includes('priority') && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 w-24">优先级</th>}
-              {visibleColumns.includes('project') && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">项目</th>}
-              {visibleColumns.includes('estimated') && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 w-20">预估</th>}
-              {visibleColumns.includes('actual') && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 w-20">实际</th>}
-              {visibleColumns.includes('due_date') && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 w-28">截止日期</th>}
-              {visibleColumns.includes('scheduled_date') && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 w-28">计划日期</th>}
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 w-16">操作</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {tasks.map((task) => (
-              <tr 
-                key={task.id} 
-                onClick={() => openTaskDetail(task)}
-                className={`hover:bg-gray-50 cursor-pointer ${task.status === 'completed' ? 'bg-gray-50/50' : ''}`}
-              >
-                {visibleColumns.includes('status') && (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[700px]">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                {visibleColumns.includes('status') && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 w-16">状态</th>}
+                {visibleColumns.includes('title') && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">任务</th>}
+                {visibleColumns.includes('task_type') && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 w-20">类型</th>}
+                {visibleColumns.includes('priority') && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 w-24">优先级</th>}
+                {visibleColumns.includes('project') && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">项目</th>}
+                {visibleColumns.includes('estimated') && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 w-20">预估</th>}
+                {visibleColumns.includes('actual') && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 w-20">实际</th>}
+                {visibleColumns.includes('due_date') && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 w-28">截止日期</th>}
+                {visibleColumns.includes('scheduled_date') && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 w-28">计划日期</th>}
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 w-16">操作</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {tasks.map((task) => (
+                <tr
+                  key={task.id}
+                  onClick={() => openTaskDetail(task)}
+                  className={`hover:bg-gray-50 cursor-pointer ${task.status === 'completed' ? 'bg-gray-50/50' : ''}`}
+                >
+                  {visibleColumns.includes('status') && (
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleCompleteClick(task); }}
+                        className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
+                          task.status === 'completed' ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300'
+                        }`}
+                      >
+                        {task.status === 'completed' && <CheckCircle2 className="w-3 h-3 text-white" />}
+                      </button>
+                    </td>
+                  )}
+                  {visibleColumns.includes('title') && (
+                    <td className={`px-4 py-3 text-sm ${task.status === 'completed' ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
+                      {task.title}
+                    </td>
+                  )}
+                  {visibleColumns.includes('task_type') && (
+                    <td className="px-4 py-3">
+                      <span className={`text-xs px-2 py-1 rounded ${TASK_TYPE_CONFIG[task.task_type]?.bg || 'bg-gray-100'} ${TASK_TYPE_CONFIG[task.task_type]?.color || 'text-gray-600'}`}>
+                        {TASK_TYPE_CONFIG[task.task_type]?.icon} {TASK_TYPE_CONFIG[task.task_type]?.label || task.task_type}
+                      </span>
+                    </td>
+                  )}
+                  {visibleColumns.includes('priority') && (
+                    <td className="px-4 py-3">
+                      <span className={`text-xs px-2 py-1 rounded ${PRIORITY_CONFIG[task.priority].bg} ${PRIORITY_CONFIG[task.priority].color}`}>
+                        {PRIORITY_CONFIG[task.priority].label}
+                      </span>
+                    </td>
+                  )}
+                  {visibleColumns.includes('project') && (
+                    <td className="px-4 py-3 text-sm text-gray-500">{task.project_name || '-'}</td>
+                  )}
+                  {visibleColumns.includes('estimated') && (
+                    <td className="px-4 py-3 text-sm text-gray-500">{task.estimated_pomodoros || '-'}</td>
+                  )}
+                  {visibleColumns.includes('actual') && (
+                    <td className="px-4 py-3 text-sm text-gray-500">{task.actual_pomodoros || '-'}</td>
+                  )}
+                  {visibleColumns.includes('due_date') && (
+                    <td className="px-4 py-3 text-sm text-gray-500">
+                      {task.due_date ? format(parseISO(task.due_date), 'yyyy-MM-dd') : '-'}
+                    </td>
+                  )}
+                  {visibleColumns.includes('scheduled_date') && (
+                    <td className="px-4 py-3 text-sm text-gray-500">
+                      {task.scheduled_date ? format(parseISO(task.scheduled_date), 'yyyy-MM-dd') : '-'}
+                    </td>
+                  )}
                   <td className="px-4 py-3">
                     <button
-                      onClick={(e) => { e.stopPropagation(); handleCompleteClick(task); }}
-                      className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
-                        task.status === 'completed' ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300'
-                      }`}
+                      onClick={(e) => { e.stopPropagation(); handleDelete(task.id, e); }}
+                      className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg"
                     >
-                      {task.status === 'completed' && <CheckCircle2 className="w-3 h-3 text-white" />}
+                      <X className="w-4 h-4" />
                     </button>
                   </td>
-                )}
-                {visibleColumns.includes('title') && (
-                  <td className={`px-4 py-3 text-sm ${task.status === 'completed' ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
-                    {task.title}
-                  </td>
-                )}
-                {visibleColumns.includes('task_type') && (
-                  <td className="px-4 py-3">
-                    <span className={`text-xs px-2 py-1 rounded ${TASK_TYPE_CONFIG[task.task_type]?.bg || 'bg-gray-100'} ${TASK_TYPE_CONFIG[task.task_type]?.color || 'text-gray-600'}`}>
-                      {TASK_TYPE_CONFIG[task.task_type]?.icon} {TASK_TYPE_CONFIG[task.task_type]?.label || task.task_type}
-                    </span>
-                  </td>
-                )}
-                {visibleColumns.includes('priority') && (
-                  <td className="px-4 py-3">
-                    <span className={`text-xs px-2 py-1 rounded ${PRIORITY_CONFIG[task.priority].bg} ${PRIORITY_CONFIG[task.priority].color}`}>
-                      {PRIORITY_CONFIG[task.priority].label}
-                    </span>
-                  </td>
-                )}
-                {visibleColumns.includes('project') && (
-                  <td className="px-4 py-3 text-sm text-gray-500">{task.project_name || '-'}</td>
-                )}
-                {visibleColumns.includes('estimated') && (
-                  <td className="px-4 py-3 text-sm text-gray-500">{task.estimated_pomodoros || '-'}</td>
-                )}
-                {visibleColumns.includes('actual') && (
-                  <td className="px-4 py-3 text-sm text-gray-500">{task.actual_pomodoros || '-'}</td>
-                )}
-                {visibleColumns.includes('due_date') && (
-                  <td className="px-4 py-3 text-sm text-gray-500">
-                    {task.due_date ? format(parseISO(task.due_date), 'yyyy-MM-dd') : '-'}
-                  </td>
-                )}
-                {visibleColumns.includes('scheduled_date') && (
-                  <td className="px-4 py-3 text-sm text-gray-500">
-                    {task.scheduled_date ? format(parseISO(task.scheduled_date), 'yyyy-MM-dd') : '-'}
-                  </td>
-                )}
-                <td className="px-4 py-3">
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleDelete(task.id, e); }}
-                    className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
         {tasks.length === 0 && (
           <div className="text-center py-16 text-gray-500">暂无任务</div>
         )}
@@ -992,7 +997,7 @@ export default function Tasks() {
           </div>
         </div>
         
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <button onClick={openCreateProjectTask} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
             <Plus className="w-4 h-4" />
             新建任务
@@ -1110,7 +1115,7 @@ export default function Tasks() {
 
           {/* 右侧：项目任务 (占2/3) */}
           <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 p-4">
-            <div className="flex items-center gap-2 mb-4">
+            <div className="flex flex-wrap items-center gap-2 mb-4">
               <h3 className="text-sm font-medium text-gray-900">项目任务</h3>
               <span className="text-xs text-gray-500">
                 共 <span className="font-medium text-gray-700">{tasks.length}</span> 个
@@ -1211,7 +1216,7 @@ export default function Tasks() {
             />
           </div>
           
-          <div className="mt-4 flex gap-6 text-sm">
+          <div className="mt-4 flex flex-wrap gap-4 md:gap-6 text-sm">
             <div>
               <span className="text-blue-100">今日任务</span>
               <span className="ml-2 text-xl font-bold">{totalCount}</span>
@@ -1323,7 +1328,7 @@ export default function Tasks() {
     return (
       <div className="space-y-4">
         {/* 周导航栏 */}
-        <div className="flex items-center justify-between bg-white rounded-xl border border-gray-200 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 bg-white rounded-xl border border-gray-200 p-4">
           <div className="flex items-center gap-4">
             <button 
               onClick={() => setWeekOffset(weekOffset - 1)}
@@ -1399,7 +1404,7 @@ export default function Tasks() {
         </div>
         
         {/* 任务统计 */}
-        <div className="flex gap-4 text-sm">
+        <div className="flex flex-wrap gap-3 md:gap-4 text-sm">
           <div className="px-4 py-2 bg-blue-50 rounded-lg">
             <span className="text-gray-600">本周任务:</span>
             <span className="ml-2 font-bold text-blue-600">{weekTasks.length}</span>
@@ -1415,7 +1420,7 @@ export default function Tasks() {
         </div>
         
         {/* 周视图网格 */}
-        <div className="grid grid-cols-8 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-8 gap-3">
           {/* 逾期任务列 */}
           <div className="min-h-[200px]">
             <div className="text-center py-2 rounded-t-lg bg-red-100">
@@ -1575,20 +1580,37 @@ export default function Tasks() {
   };
 
   return (
-    <div className="h-[calc(100vh-4rem)] flex gap-6">
+    <div className="h-[calc(100vh-4rem)] flex flex-col md:flex-row gap-4 md:gap-6">
+      {/* 移动端遮罩 */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/40 z-40 md:hidden"
+          onClick={closeSidebar}
+        />
+      )}
+
       {/* 左侧边栏 */}
-      <div className="w-56 flex-shrink-0 space-y-6">
-        <button onClick={() => setShowCreateModal(true)} className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-2.5 rounded-xl hover:bg-blue-700">
+      <aside
+        className={`fixed md:static left-0 top-0 h-full md:h-auto w-64 md:w-56 flex-shrink-0 bg-white md:bg-transparent border-r md:border-none border-gray-200 z-50 transform transition-transform duration-200 ease-in-out overflow-y-auto p-4 md:p-0 shadow-xl md:shadow-none ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}
+      >
+        <div className="md:hidden flex items-center justify-between mb-4">
+          <span className="text-lg font-bold text-gray-900">任务视图</span>
+          <button onClick={closeSidebar} className="p-2 rounded-lg text-gray-500 hover:bg-gray-100">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <button onClick={() => { setShowCreateModal(true); closeSidebar(); }} className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-2.5 rounded-xl hover:bg-blue-700">
           <Plus className="w-4 h-4" />
           新建任务
         </button>
-        
-        <div className="space-y-1">
+
+        <div className="space-y-1 mt-6 md:mt-6">
           <p className="text-xs font-medium text-gray-400 uppercase px-3 mb-2">视图</p>
           {(['inbox', 'today', 'week', 'overdue', 'todo', 'completed', 'someday', 'trash', 'detail'] as ViewType[]).map((view) => (
             <button
               key={view}
-              onClick={() => { setCurrentView(view); setSelectedProject(null); }}
+              onClick={() => { setCurrentView(view); setSelectedProject(null); closeSidebar(); }}
               className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm ${currentView === view ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700 hover:bg-gray-100'}`}
             >
               <span className={currentView === view ? VIEW_CONFIG[view].color : 'text-gray-400'}>{VIEW_CONFIG[view].icon}</span>
@@ -1596,13 +1618,13 @@ export default function Tasks() {
             </button>
           ))}
         </div>
-        
-        <div className="flex flex-col min-h-0">
+
+        <div className="flex flex-col min-h-0 mt-6 md:mt-6">
           <div className="flex items-center justify-between px-3 mb-2">
             <p className="text-xs font-medium text-gray-400 uppercase">项目</p>
             <button onClick={() => setShowProjectModal(true)} className="text-blue-600 hover:text-blue-700"><Plus className="w-4 h-4" /></button>
           </div>
-          
+
           {/* 项目搜索框 */}
           <div className="px-3 mb-2">
             <div className="relative">
@@ -1626,13 +1648,13 @@ export default function Tasks() {
               )}
             </div>
           </div>
-          
+
           {/* 项目列表 - 带滚动条 */}
           <div className="overflow-y-auto max-h-[calc(100vh-400px)] space-y-1 px-1">
             {projects
               .filter(p => p.name.toLowerCase().includes(projectSearch.toLowerCase()))
               .map((project) => (
-                <div key={project.id} onClick={() => selectProject(project)} className={`px-3 py-2 rounded-lg cursor-pointer ${selectedProject?.id === project.id && currentView === 'project' ? 'bg-blue-50 border border-blue-200' : 'hover:bg-gray-100'}`}>
+                <div key={project.id} onClick={() => { selectProject(project); closeSidebar(); }} className={`px-3 py-2 rounded-lg cursor-pointer ${selectedProject?.id === project.id && currentView === 'project' ? 'bg-blue-50 border border-blue-200' : 'hover:bg-gray-100'}`}>
                   <div className="flex items-center gap-2 text-sm text-gray-700">
                     <Folder className="w-4 h-4 text-gray-400 flex-shrink-0" />
                     <span className="flex-1 truncate" title={project.name}>{project.name}</span>
@@ -1652,27 +1674,36 @@ export default function Tasks() {
             )}
           </div>
         </div>
-      </div>
-      
+      </aside>
+
       {/* 主内容区 */}
       <div className="flex-1 flex flex-col min-w-0 bg-white rounded-2xl border border-gray-200 overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-          <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-            <span className={VIEW_CONFIG[currentView].color}>{VIEW_CONFIG[currentView].icon}</span>
-            {currentView === 'project' && selectedProject ? selectedProject.name : VIEW_CONFIG[currentView].label}
-          </h1>
+        <div className="px-4 md:px-6 py-3 md:py-4 border-b border-gray-200 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="md:hidden p-2 -ml-2 rounded-lg text-gray-600 hover:bg-gray-100"
+              aria-label="打开任务视图"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <h1 className="text-lg md:text-xl font-bold text-gray-900 flex items-center gap-2 truncate">
+              <span className={VIEW_CONFIG[currentView].color}>{VIEW_CONFIG[currentView].icon}</span>
+              <span className="truncate">{currentView === 'project' && selectedProject ? selectedProject.name : VIEW_CONFIG[currentView].label}</span>
+            </h1>
+          </div>
           {['overdue', 'todo', 'completed', 'detail'].includes(currentView) && (
             <div className="relative">
-              <button onClick={() => setShowFilterPanel(!showFilterPanel)} className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
+              <button onClick={() => setShowFilterPanel(!showFilterPanel)} className="flex items-center gap-2 px-3 py-1.5 md:px-4 md:py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
                 <Filter className="w-4 h-4" />
-                筛选
+                <span className="hidden sm:inline">筛选</span>
               </button>
               {renderFilterPanel()}
             </div>
           )}
         </div>
         
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-4 md:p-6">
           {loading ? (
             <div className="flex items-center justify-center h-64"><div className="w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin" /></div>
           ) : currentView === 'today' ? (
