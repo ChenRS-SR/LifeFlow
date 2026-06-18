@@ -57,10 +57,43 @@ export interface Task {
   scheduled_date?: string;
   estimated_minutes?: number;
   completed_at?: string;
+  completed_date?: string;
   created_at: string;
 }
 
-export type HabitFrequency = 'daily' | 'weekdays' | 'weekends' | 'weekly';
+export interface DashboardStats {
+  today: {
+    pending: number;
+    completed: number;
+    overdue: number;
+    inbox: number;
+  };
+  week: {
+    total: number;
+    completed: number;
+    progress: number;
+  };
+  goals: {
+    active: number;
+  };
+  habits: {
+    total: number;
+    completed: number;
+  };
+  projects: Array<{
+    id: number;
+    name: string;
+    progress: number;
+    status: string;
+  }>;
+  top_tasks: Array<{
+    id: number;
+    title: string;
+    priority: string;
+    due_date: string | null;
+  }>;
+  heatmap: { date: string; count: number }[];
+}
 
 export interface Habit {
   id: number;
@@ -74,6 +107,8 @@ export interface Habit {
   is_active: boolean;
   created_at: string;
 }
+
+export type HabitFrequency = 'daily' | 'weekdays' | 'weekends' | 'weekly';
 
 export interface HabitLog {
   id: number;
@@ -126,17 +161,3 @@ export interface Review {
   created_at: string;
 }
 
-export interface DashboardStats {
-  today: {
-    tasks_count: number;
-    completed_habits: number;
-    total_habits: number;
-  };
-  overview: {
-    active_goals: number;
-    active_habits: number;
-    week_tasks_total: number;
-    week_tasks_completed: number;
-  };
-  heatmap: { date: string; count: number }[];
-}

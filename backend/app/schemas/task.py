@@ -18,6 +18,7 @@ class TaskBase(BaseModel):
     due_date: Optional[date] = None
     scheduled_date: Optional[date] = None
     estimated_minutes: Optional[int] = None
+    completed_date: Optional[date] = None
 
 
 class TaskCreate(TaskBase):
@@ -31,6 +32,7 @@ class TaskUpdate(BaseModel):
     priority: Optional[TaskPriority] = None
     due_date: Optional[date] = None
     scheduled_date: Optional[date] = None
+    completed_date: Optional[date] = None
 
 
 class Task(TaskBase):
@@ -40,6 +42,6 @@ class Task(TaskBase):
     status: TaskStatus
     completed_at: Optional[datetime]
     created_at: datetime
-    
+
     class Config:
         from_attributes = True

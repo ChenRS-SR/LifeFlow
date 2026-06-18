@@ -40,17 +40,18 @@ def get_dashboard_stats(
          ((models.Task.due_date < today) & (models.Task.due_date != None)))
     ).count()
 
-    # 2. 今日已完成任务
+    # 2. 今日已完成任务（完成日期为今天）
     today_completed = db.query(models.Task).filter(
         models.Task.user_id == current_user.id,
         models.Task.status == TaskStatus.COMPLETED,
-        models.Task.completed_at >= today
+        models.Task.completed_date == today
     ).count()
 
     # 3. 逾期任务总数
     overdue_count = db.query(models.Task).filter(
         models.Task.user_id == current_user.id,
         models.Task.status != TaskStatus.COMPLETED,
+        models.Task.task_type != TaskType.TRASH,
         models.Task.due_date < today,
         models.Task.due_date != None
     ).count()
@@ -66,7 +67,7 @@ def get_dashboard_stats(
     week_tasks_completed = db.query(models.Task).filter(
         models.Task.user_id == current_user.id,
         models.Task.status == TaskStatus.COMPLETED,
-        models.Task.completed_at >= week_start
+        models.Task.completed_date >= week_start
     ).count()
 
     week_tasks_total = db.query(models.Task).filter(

@@ -356,12 +356,20 @@ def list_tasks(
         # 收件箱：未分类的任务（task_type=inbox 且未完成的）
         query = query.filter(models.Task.task_type == TaskType.INBOX, models.Task.status != TaskStatus.COMPLETED)
     elif view == "today":
-        # 今天：计划今天做 或 截止今天 或 已逾期（包含已完成）
+        # 今天待办：计划今天做 或 截止今天 或 已逾期，且未完成、非垃圾箱
         query = query.filter(
+            models.Task.status != TaskStatus.COMPLETED,
+            models.Task.task_type != TaskType.TRASH,
             models.Task.is_inbox == 0,
-            ((models.Task.scheduled_date == today) | 
+            ((models.Task.scheduled_date == today) |
              (models.Task.due_date == today) |
              ((models.Task.due_date < today) & (models.Task.due_date != None)))
+        )
+    elif view == "today_completed":
+        # 今天已完成：完成日期为今天
+        query = query.filter(
+            models.Task.status == TaskStatus.COMPLETED,
+            models.Task.completed_date == today
         )
     elif view == "week":
         # 本周：截止日期或计划日期在本周（包含已完成）
@@ -419,6 +427,7 @@ def list_tasks(
         "project_name": t.project.name if t.project else None,
         "is_inbox": t.is_inbox,
         "completed_at": t.completed_at.isoformat() if t.completed_at else None,
+        "completed_date": t.completed_date.isoformat() if t.completed_date else None,
         "created_at": t.created_at.isoformat() if t.created_at else None
     } for t in tasks]
 
@@ -563,12 +572,15 @@ def update_task(
     current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)
 ):
     """更新任务"""
-    t = db.query(models.Task).filter(models.Task.id == task_id).first()
+    t = db.query(models.Task).filter(
+        models.Task.id == task_id,
+        models.Task.user_id == current_user.id
+    ).first()
     if not t:
         raise HTTPException(status_code=404, detail="任务不存在")
-    
+
     priority_map = {1: TaskPriority.LOW, 2: TaskPriority.MEDIUM, 3: TaskPriority.HIGH, 4: TaskPriority.URGENT}
-    
+
     # 更新字段
     if 'title' in data and data['title'] is not None:
         t.title = data['title']
@@ -577,11 +589,13 @@ def update_task(
     if 'status' in data and data['status']:
         new_status = data['status']
         t.status = TaskStatus(new_status)
-        # 状态变更时更新完成时间
+        # 状态变更时同步更新完成时间和完成日期
         if new_status == "completed" and not t.completed_at:
             t.completed_at = datetime.utcnow()
+            t.completed_date = date.today()
         elif new_status != "completed":
             t.completed_at = None
+            t.completed_date = None
     if 'priority' in data and data['priority'] is not None:
         t.priority = priority_map.get(data['priority'], TaskPriority.MEDIUM)
     if 'due_date' in data:
@@ -598,10 +612,16 @@ def update_task(
         t.task_type = TaskType(data['task_type'])
         # 同步更新 is_inbox 字段
         t.is_inbox = 1 if data['task_type'] == 'inbox' else 0
-    
+
     db.commit()
     db.refresh(t)
-    return {"id": t.id, "title": t.title, "status": t.status.value}
+    return {
+        "id": t.id,
+        "title": t.title,
+        "status": t.status.value,
+        "completed_at": t.completed_at.isoformat() if t.completed_at else None,
+        "completed_date": t.completed_date.isoformat() if t.completed_date else None
+    }
 
 class CompleteTaskRequest(BaseModel):
     actual_pomodoros: Optional[int] = None
@@ -612,25 +632,32 @@ def complete_task(
     data: Optional[CompleteTaskRequest] = None,
     current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)
 ):
-    """完成任务"""
-    t = db.query(models.Task).filter(models.Task.id == task_id).first()
+    """完成任务/取消完成任务"""
+    t = db.query(models.Task).filter(
+        models.Task.id == task_id,
+        models.Task.user_id == current_user.id
+    ).first()
     if not t:
-        return {"error": "任务不存在"}
-    
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    today = date.today()
+
     if t.status == TaskStatus.COMPLETED:
         # 已完成的任务取消完成
         t.status = TaskStatus.PENDING
         t.completed_at = None
+        t.completed_date = None
         t.actual_pomodoros = None
     else:
         # 完成任务
         t.status = TaskStatus.COMPLETED
         t.completed_at = datetime.utcnow()
+        t.completed_date = today
         if data and data.actual_pomodoros is not None:
             t.actual_pomodoros = data.actual_pomodoros
-    
+
     db.commit()
-    
+
     # 更新项目进度
     if t.project_id:
         project = db.query(models.Project).filter(models.Project.id == t.project_id).first()
@@ -642,8 +669,14 @@ def complete_task(
             ).count()
             project.progress = round(completed / total * 100, 1)
             db.commit()
-    
-    return {"id": t.id, "status": t.status.value, "actual_pomodoros": t.actual_pomodoros}
+
+    return {
+        "id": t.id,
+        "status": t.status.value,
+        "actual_pomodoros": t.actual_pomodoros,
+        "completed_at": t.completed_at.isoformat() if t.completed_at else None,
+        "completed_date": t.completed_date.isoformat() if t.completed_date else None
+    }
 
 @app.delete("/api/tasks/{task_id}")
 def delete_task(task_id: int, current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)):

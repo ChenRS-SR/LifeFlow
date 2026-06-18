@@ -113,7 +113,12 @@ export default function Dashboard() {
             <span className="text-xs text-gray-400">今日</span>
           </div>
           <p className="text-2xl font-bold text-gray-900">{stats.today.pending}</p>
-          <p className="text-sm text-gray-500">待办任务</p>
+          <p className="text-sm text-gray-500">
+            待办任务
+            {stats.today.completed > 0 && (
+              <span className="ml-2 text-emerald-600 text-xs">已完成 {stats.today.completed}</span>
+            )}
+          </p>
         </div>
 
         {/* 逾期提醒 */}

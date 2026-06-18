@@ -64,7 +64,10 @@ class Task(Base):
     
     # 是否为收件箱项目（未整理）
     is_inbox = Column(Integer, default=0)  # 0=已整理, 1=收件箱（未整理）
-    
+
+    # 完成日期（用于按日期统计今日/本周已完成，与 completed_at 时间戳分离）
+    completed_date = Column(Date, nullable=True)
+
     # 时间戳
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

@@ -27,6 +27,7 @@ interface Task {
   project_name?: string;
   is_inbox: number;
   completed_at?: string;
+  completed_date?: string;
   created_at: string;
 }
 
@@ -181,6 +182,9 @@ export default function Tasks() {
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectTargetDate, setNewProjectTargetDate] = useState('');
 
+  // 今天已完成任务（独立加载，与今日待办分开）
+  const [todayCompletedTasks, setTodayCompletedTasks] = useState<Task[]>([]);
+
   // 加载数据
   useEffect(() => {
     loadData();
@@ -200,7 +204,7 @@ export default function Tasks() {
         const taskDate = task.due_date || task.scheduled_date;
         if (!taskDate) return false;
         const date = parseISO(taskDate);
-        
+
         if (dateRange.start && dateRange.end) {
           return isWithinInterval(date, { start: parseISO(dateRange.start), end: parseISO(dateRange.end) });
         } else if (dateRange.start) {
@@ -227,8 +231,20 @@ export default function Tasks() {
         const projectTasks = tasksRes.data?.filter((t: Task) => t.project_id === selectedProject.id) || [];
         setAllTasks(projectTasks);
         setTasks(projectTasks);
+        setTodayCompletedTasks([]);
         // 更新选中项目的最新数据（包括大纲）
         setSelectedProject(projectRes.data);
+      } else if (currentView === 'today') {
+        const [pendingRes, completedRes, projectsRes] = await Promise.all([
+          taskAPI.list('today'),
+          taskAPI.list('today_completed'),
+          projectAPI.list(),
+        ]);
+        const pendingTasks = pendingRes.data || [];
+        setAllTasks(pendingTasks);
+        setTasks(pendingTasks);
+        setTodayCompletedTasks(completedRes.data || []);
+        setProjects(projectsRes.data || []);
       } else {
         const [tasksRes, projectsRes] = await Promise.all([
           taskAPI.list(currentView === 'detail' || currentView === 'week' ? 'all' : currentView),
@@ -237,6 +253,7 @@ export default function Tasks() {
         const loadedTasks = tasksRes.data || [];
         setAllTasks(loadedTasks);
         setTasks(loadedTasks);
+        setTodayCompletedTasks([]);
         setProjects(projectsRes.data || []);
       }
     } catch (err) {
@@ -751,6 +768,12 @@ export default function Tasks() {
           {task.scheduled_date && (
             <span>计划: {format(parseISO(task.scheduled_date), 'MM/dd')}</span>
           )}
+          {task.status === 'completed' && task.completed_date && (
+            <span className="text-emerald-600 flex items-center gap-1">
+              <CheckCircle2 className="w-3 h-3" />
+              完成于: {format(parseISO(task.completed_date), 'MM/dd')}
+            </span>
+          )}
         </div>
       </div>
       
@@ -1153,18 +1176,19 @@ export default function Tasks() {
     const today = new Date();
     const todayStr = format(today, 'yyyy年MM月dd日');
     const weekday = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][today.getDay()];
-    
-    // 按优先级和状态分组
-    const urgentTasks = tasks.filter(t => t.priority === 4 && t.status !== 'completed');
-    const importantTasks = tasks.filter(t => t.priority === 3 && t.status !== 'completed');
-    const normalTasks = tasks.filter(t => [1, 2].includes(t.priority) && t.status !== 'completed');
-    const completedTasks = tasks.filter(t => t.status === 'completed');
-    
+
+    // 今日待办：后端 today 视图已排除已完成和垃圾箱
+    const urgentTasks = tasks.filter(t => t.priority === 4);
+    const importantTasks = tasks.filter(t => t.priority === 3);
+    const normalTasks = tasks.filter(t => [1, 2].includes(t.priority));
+    // 今日已完成：单独加载
+    const completedTasks = todayCompletedTasks;
+
     const pendingCount = urgentTasks.length + importantTasks.length + normalTasks.length;
     const completedCount = completedTasks.length;
-    const totalCount = tasks.length;
+    const totalCount = pendingCount + completedCount;
     const progress = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
-    
+
     // 按截止时间排序的辅助函数
     const sortByDueDate = (a: Task, b: Task) => {
       if (!a.due_date && !b.due_date) return 0;
@@ -1172,10 +1196,10 @@ export default function Tasks() {
       if (!b.due_date) return -1;
       return parseISO(a.due_date).getTime() - parseISO(b.due_date).getTime();
     };
-    
+
     const renderTaskSection = (title: string, taskList: Task[], colorClass: string, icon: string) => {
       if (taskList.length === 0) return null;
-      
+
       return (
         <div className="mb-6">
           <div className={`flex items-center gap-2 mb-3 px-4 py-2 rounded-lg ${colorClass}`}>
@@ -1193,7 +1217,7 @@ export default function Tasks() {
         </div>
       );
     };
-    
+
     return (
       <div className="max-w-3xl">
         {/* 今日概览卡片 */}
@@ -1208,30 +1232,30 @@ export default function Tasks() {
               <div className="text-sm text-blue-100">完成进度</div>
             </div>
           </div>
-          
+
           <div className="mt-4 h-2 bg-white/20 rounded-full overflow-hidden">
-            <div 
+            <div
               className="h-full bg-white rounded-full transition-all duration-500"
               style={{ width: `${progress}%` }}
             />
           </div>
-          
+
           <div className="mt-4 flex flex-wrap gap-4 md:gap-6 text-sm">
             <div>
-              <span className="text-blue-100">今日任务</span>
-              <span className="ml-2 text-xl font-bold">{totalCount}</span>
-            </div>
-            <div>
-              <span className="text-blue-100">待完成</span>
+              <span className="text-blue-100">今日待办</span>
               <span className="ml-2 text-xl font-bold">{pendingCount}</span>
             </div>
             <div>
               <span className="text-blue-100">已完成</span>
               <span className="ml-2 text-xl font-bold">{completedCount}</span>
             </div>
+            <div>
+              <span className="text-blue-100">总计</span>
+              <span className="ml-2 text-xl font-bold">{totalCount}</span>
+            </div>
           </div>
         </div>
-        
+
         {/* 任务分组 */}
         {pendingCount === 0 && completedCount === 0 ? (
           <div className="text-center py-16">
@@ -1245,20 +1269,20 @@ export default function Tasks() {
           <div className="space-y-2">
             {/* 紧急事项 */}
             {renderTaskSection('🔥 紧急事项', urgentTasks, 'bg-red-50 text-red-700', '🔥')}
-            
+
             {/* 重要事项 */}
             {renderTaskSection('⚠️ 重要事项', importantTasks, 'bg-orange-50 text-orange-700', '⚠️')}
-            
+
             {/* 普通待办 */}
             {renderTaskSection('✅ 普通待办', normalTasks, 'bg-blue-50 text-blue-700', '✅')}
-            
+
             {/* 已完成（可折叠） */}
             {completedCount > 0 && (
               <div className="mt-8 pt-6 border-t border-gray-200">
                 <details className="group">
                   <summary className="flex items-center gap-2 cursor-pointer text-gray-500 hover:text-gray-700">
                     <span className="text-lg">✓</span>
-                    <span className="font-medium">已完成 ({completedCount})</span>
+                    <span className="font-medium">今日已完成 ({completedCount})</span>
                     <span className="ml-auto text-xs group-open:rotate-180 transition-transform">▼</span>
                   </summary>
                   <div className="mt-3 space-y-2 opacity-60">
