@@ -4,7 +4,7 @@ import axios from 'axios';
 // 开发环境：Vite 会把 /api 代理到后端 http://127.0.0.1:8000
 // 生产环境：Nginx 会把 /api 反向代理到后端
 const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
+  baseURL: import.meta.env.VITE_API_BASE_URL || '/',
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',

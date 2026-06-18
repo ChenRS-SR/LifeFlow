@@ -5,8 +5,8 @@ interface LoginProps {
   onLogin: (user: User) => void;
 }
 
-// API 基础路径：开发环境走 Vite 代理，生产环境走 Nginx 反向代理
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+// 登录 API 路径
+const API_BASE_URL = '/api';
 
 export default function Login({ onLogin }: LoginProps) {
   const [loading, setLoading] = useState(false);
