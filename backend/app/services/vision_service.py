@@ -17,21 +17,32 @@ from app.services.ai_client import AIClient, AIClientError
 DIET_SYSTEM_PROMPT = """你是一位专业的饮食记录分析助手。用户会上传一张「薄荷健康」App 的饮食记录截图。
 
 【截图结构】
-1. 顶部：饮食摄入总热量、运动消耗、还可以吃的热量、自定义预算
-2. 中部：三大营养素（碳水化合物、蛋白质、脂肪）及当前摄入克数
-3. 下部：按餐分组，每餐包含：
+1. 顶部：
+   - 左侧「饮食摄入」：当天已摄入总热量（如 1775）
+   - 中间圆环「还可以吃」：剩余热量
+   - 圆环下方「自定义预算」：当日热量预算（如 2670）
+   - 右侧「运动消耗」
+2. 中部：三大营养素（碳水化合物、蛋白质、脂肪），每个条目显示为「当前摄入 / 推荐克数」，如：
+   - 碳水化合物 194 / 340克
+   - 蛋白质 102 / 174克
+   - 脂肪 66 / 68克
+3. 下部：按餐分组，每餐是一个卡片，包含：
    - 餐名（早餐/午餐/晚餐/加餐/晚加餐）
-   - 建议热量范围
-   - 该餐总热量
-   - 食物列表：食物名称、重量/份量、热量
+   - 建议热量范围（如"建议668-935千卡"）—— 这不是该餐总热量
+   - 该餐总热量：卡片右侧单独显示的绿色/深色数字 + "千卡"（如早餐 166千卡、午餐 532千卡）
+   - 食物列表：食物名称、重量/份量、每个食物的热量
 
 【输出 JSON 格式】
 {
   "raw_text": "识别到的原始文本摘要",
   "total_calories": 1775,
+  "total_calories_target": 2670,
   "total_protein": 102,
+  "total_protein_target": 174,
   "total_carbs": 194,
+  "total_carbs_target": 340,
   "total_fat": 66,
+  "total_fat_target": 68,
   "meals": [
     {
       "name": "早餐",
@@ -45,11 +56,12 @@ DIET_SYSTEM_PROMPT = """你是一位专业的饮食记录分析助手。用户�
 
 【强制规则】
 1. 只输出 JSON，不要 markdown，不要解释。
-2. total_calories 是顶部"饮食摄入"的总热量数字。
-3. total_protein/total_carbs/total_fat 从三大营养素区域提取当前摄入数字（如"194/340克"取194，"102/174克"取102）。
-4. 每餐的 calories 是该餐右侧显示的总热量（如早餐 166千卡）。
+2. total_calories 是顶部「饮食摄入」的已摄入总热量；total_calories_target 是「自定义预算」的热量预算。
+3. total_protein/total_carbs/total_fat 是当前摄入数字；对应的 *_target 是推荐数字（如"194/340克"分别取 194 和 340）。
+4. 每餐的 calories 必须是该餐卡片右侧单独显示的总热量（如"早餐 166千卡"取 166，"午餐 532千卡"取 532），不是建议范围，也不是该餐第一个食物的热量。
 5. 食物 weight 保留原始单位字符串（如"250.0毫升"、"1.0一套"、"100.0克"）。
-6. 如果某字段识别不到，对应填 null。
+6. 列出每餐所有食物，不要遗漏卡片底部的食物。
+7. 如果某字段识别不到，对应填 null。
 """
 
 WORKOUT_SYSTEM_PROMPT = """你是一位专业的健身记录分析助手。用户会上传一张「训记」App 的训练记录截图。
@@ -150,6 +162,9 @@ class VisionService:
         if record_type == "workout":
             structured = self._normalize_workout_record(structured)
             structured = self._extract_summary_from_raw(structured)
+        elif record_type == "diet":
+            structured = self._normalize_diet_record(structured)
+            structured = self._extract_diet_targets_from_raw(structured)
         structured["recognized_at"] = datetime.utcnow().isoformat()
         return structured
 
@@ -274,6 +289,76 @@ class VisionService:
             m = re.search(r"消耗\s*\(大卡\)\s*(\d+)", raw)
             if m:
                 record["total_calories"] = int(m.group(1))
+
+        return record
+
+    def _normalize_diet_record(self, record: dict) -> dict:
+        """
+        后处理饮食记录：
+        1. 用每餐食物热量之和修正/补充该餐总热量
+        2. 清洗营养素数值
+        """
+        for key in ["total_calories", "total_protein", "total_carbs", "total_fat"]:
+            record[key] = self._to_int(record.get(key))
+
+        meals = []
+        for meal in record.get("meals", []):
+            if not isinstance(meal, dict):
+                continue
+            foods = []
+            food_cal_sum = 0
+            for f in meal.get("foods", []):
+                if not isinstance(f, dict):
+                    continue
+                fc = self._to_int(f.get("calories"))
+                foods.append({
+                    "name": f.get("name", ""),
+                    "weight": f.get("weight", ""),
+                    "calories": fc,
+                })
+                if isinstance(fc, int):
+                    food_cal_sum += fc
+            meal["foods"] = foods
+            # 如果 AI 返回的每餐总热量为空或明显等于首餐热量（常见错误），用食物之和覆盖
+            meal_cal = self._to_int(meal.get("calories"))
+            if food_cal_sum > 0 and (not meal_cal or meal_cal == food_cal_sum):
+                meal["calories"] = food_cal_sum
+            else:
+                meal["calories"] = meal_cal
+            meals.append(meal)
+        record["meals"] = meals
+        return record
+
+    def _extract_diet_targets_from_raw(self, record: dict) -> dict:
+        """如果 AI 没提取到热量预算/营养素推荐值，从 raw_text 正则补充"""
+        raw = record.get("raw_text", "")
+        if not isinstance(raw, str):
+            return record
+
+        # 热量预算：自定义预算 2670、预算 2670、还可以吃 895（剩余，不是预算）
+        if not record.get("total_calories_target"):
+            m = re.search(r"自定义预算\s*(\d+)", raw)
+            if not m:
+                m = re.search(r"预算\s*(\d+)", raw)
+            if m:
+                record["total_calories_target"] = int(m.group(1))
+
+        # 三大营养素推荐值：碳水化合物 194 / 340克、蛋白质 102 / 174克、脂肪 66 / 68克
+        if not record.get("total_carbs_target"):
+            m = re.search(r"碳水化合物\s*\D*(\d+)\s*/\s*(\d+)\s*克", raw)
+            if m:
+                record["total_carbs"] = int(m.group(1))
+                record["total_carbs_target"] = int(m.group(2))
+        if not record.get("total_protein_target"):
+            m = re.search(r"蛋白质\s*\D*(\d+)\s*/\s*(\d+)\s*克", raw)
+            if m:
+                record["total_protein"] = int(m.group(1))
+                record["total_protein_target"] = int(m.group(2))
+        if not record.get("total_fat_target"):
+            m = re.search(r"脂肪\s*\D*(\d+)\s*/\s*(\d+)\s*克", raw)
+            if m:
+                record["total_fat"] = int(m.group(1))
+                record["total_fat_target"] = int(m.group(2))
 
         return record
 

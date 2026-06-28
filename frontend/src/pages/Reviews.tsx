@@ -226,19 +226,32 @@ function RecordDisplay({
     return path.split('.').reduce((acc, key) => acc?.[key], localRecord);
   };
 
-  const NumberInput = ({ path, label, colorClass }: { path: string; label: string; colorClass?: string }) => {
+  const NumberInput = ({ path, targetPath, label, colorClass }: { path: string; targetPath?: string; label: string; colorClass?: string }) => {
     const value = getField(path);
+    const targetValue = targetPath ? getField(targetPath) : null;
+    const displayValue = targetValue != null ? `${value ?? '-'}/${targetValue}` : (value ?? '-');
     return (
       <div className="bg-white rounded p-2 text-center">
         {isEditing ? (
-          <input
-            type="number"
-            value={value ?? ''}
-            onChange={(e) => setField(path, e.target.value === '' ? null : Number(e.target.value))}
-            className="w-full text-lg font-bold text-center border-b border-primary-300 focus:outline-none"
-          />
+          <div className="space-y-1">
+            <input
+              type="number"
+              value={value ?? ''}
+              onChange={(e) => setField(path, e.target.value === '' ? null : Number(e.target.value))}
+              className="w-full text-lg font-bold text-center border-b border-primary-300 focus:outline-none"
+            />
+            {targetPath && (
+              <input
+                type="number"
+                value={targetValue ?? ''}
+                onChange={(e) => setField(targetPath, e.target.value === '' ? null : Number(e.target.value))}
+                className="w-full text-sm text-center border-b border-gray-300 focus:outline-none text-gray-500"
+                placeholder="目标"
+              />
+            )}
+          </div>
         ) : (
-          <div className={`text-lg font-bold ${colorClass || 'text-gray-700'}`}>{value ?? '-'}</div>
+          <div className={`text-lg font-bold ${colorClass || 'text-gray-700'}`}>{displayValue}</div>
         )}
         <div className="text-xs text-gray-500">{label}</div>
       </div>
@@ -251,10 +264,10 @@ function RecordDisplay({
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         {type === 'diet' && (
           <>
-            <NumberInput path="total_calories" label="总热量 (kcal)" colorClass="text-orange-600" />
-            <NumberInput path="total_protein" label="蛋白质 (g)" colorClass="text-blue-600" />
-            <NumberInput path="total_carbs" label="碳水 (g)" colorClass="text-green-600" />
-            <NumberInput path="total_fat" label="脂肪 (g)" colorClass="text-yellow-600" />
+            <NumberInput path="total_calories" targetPath="total_calories_target" label="总热量 (kcal)" colorClass="text-orange-600" />
+            <NumberInput path="total_protein" targetPath="total_protein_target" label="蛋白质 (g)" colorClass="text-blue-600" />
+            <NumberInput path="total_carbs" targetPath="total_carbs_target" label="碳水 (g)" colorClass="text-green-600" />
+            <NumberInput path="total_fat" targetPath="total_fat_target" label="脂肪 (g)" colorClass="text-yellow-600" />
           </>
         )}
         {type === 'workout' && (
