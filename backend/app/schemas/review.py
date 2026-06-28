@@ -69,3 +69,11 @@ class Review(ReviewBase):
         if hasattr(value, "isoformat"):
             return value.isoformat()
         return value
+
+    @field_serializer("period")
+    def serialize_period(self, value):
+        if value is None:
+            return None
+        if hasattr(value, "value"):
+            return value.value
+        return value
