@@ -104,11 +104,14 @@ class VisionService:
             raise VisionServiceError(f"不支持的识别类型: {record_type}")
 
         try:
+            # 阿里云 qwen3.5-ocr 推荐参数：min_pixels=3072, max_pixels=8388608
             raw_content = self.ai_client.chat_completion(
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 image_bytes=image_bytes,
                 image_mime=image_mime,
+                min_pixels=3072,
+                max_pixels=8388608,
             )
         except AIClientError as e:
             raise VisionServiceError(f"AI 识别失败: {e}") from e

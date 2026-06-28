@@ -58,6 +58,8 @@ class AIClient:
         user_prompt: str,
         image_bytes: Optional[bytes] = None,
         image_mime: str = "image/jpeg",
+        min_pixels: Optional[int] = None,
+        max_pixels: Optional[int] = None,
     ) -> str:
         """
         同步调用 chat completion。
@@ -67,6 +69,8 @@ class AIClient:
             user_prompt: 用户提示词
             image_bytes: 可选，图片二进制数据，传入则走多模态 vision 接口
             image_mime: 图片 MIME 类型
+            min_pixels: 图片最小像素阈值（部分 OCR 模型如 qwen3.5-ocr 需要）
+            max_pixels: 图片最大像素阈值（部分 OCR 模型如 qwen3.5-ocr 需要）
 
         Returns:
             AI 返回的文本内容
@@ -83,13 +87,20 @@ class AIClient:
         user_content: List[Any]
         if image_bytes:
             image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+            image_url_obj: dict[str, Any] = {
+                "url": f"data:{image_mime};base64,{image_b64}",
+            }
+            # 阿里云 qwen3.5-ocr 等模型支持 min_pixels/max_pixels 以获得更好识别效果
+            if min_pixels is not None:
+                image_url_obj["min_pixels"] = min_pixels
+            if max_pixels is not None:
+                image_url_obj["max_pixels"] = max_pixels
+
             user_content = [
                 {"type": "text", "text": user_prompt},
                 {
                     "type": "image_url",
-                    "image_url": {
-                        "url": f"data:{image_mime};base64,{image_b64}",
-                    },
+                    "image_url": image_url_obj,
                 },
             ]
         else:
