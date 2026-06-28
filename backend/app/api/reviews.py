@@ -320,7 +320,6 @@ def get_today_review(
 
 
 @router.put("/{review_id}", response_model=schemas.Review)
-@router.put("/{review_id}", response_model=schemas.Review)
 def update_review(
     review_id: int,
     review_in: schemas.ReviewUpdate,

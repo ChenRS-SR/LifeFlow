@@ -60,6 +60,9 @@ class Review(Base):
     interpretive_summary = Column(Text, nullable=True) # 深度思考/解读
     decisional_summary = Column(Text, nullable=True)   # 决策/行动计划
     
+    # 多维度打分（月/季度/年度复盘使用）
+    dimensions = Column(JSON, nullable=True)  # { "外型": 5, "社交": 4, ... }
+
     # 时间戳
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

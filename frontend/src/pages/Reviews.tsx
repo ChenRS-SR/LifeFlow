@@ -88,6 +88,7 @@ interface ReviewFormData {
   reflective_summary?: string;
   interpretive_summary?: string;
   decisional_summary?: string;
+  dimensions?: Record<string, number>;
 }
 
 // ============ Toast 组件 ============
@@ -152,12 +153,13 @@ function ImportModal({
         const today = format(date, 'yyyy-MM-dd');
         try {
           const weekRes = await habitAPI.getWeek();
-          const weekData = weekRes.data || {};
-          // weekData 格式: { habit_id: { date: count } }
+          const weekData = weekRes.data?.habits || [];
+          // 格式: [{ habit: { id, name, ... }, week_status: [{ date, actual, completed }, ...] }, ...]
           const todayLogs: Record<number, number> = {};
-          Object.entries(weekData).forEach(([habitId, dates]: [string, any]) => {
-            if (dates[today] > 0) {
-              todayLogs[parseInt(habitId)] = dates[today];
+          weekData.forEach((item: any) => {
+            const todayStatus = item.week_status?.find((s: any) => s.date === today);
+            if (todayStatus && todayStatus.actual > 0) {
+              todayLogs[item.habit.id] = todayStatus.actual;
             }
           });
           setHabitLogs(todayLogs);
@@ -473,8 +475,10 @@ function TimelineEditor({
   );
 }
 
+type ReviewFieldKey = keyof Omit<ReviewFormData, 'dimensions' | 'mood'>;
+
 // ============ 复盘模板 ============
-const REVIEW_TEMPLATES: Record<TabPeriod, { title: string; description: string; fields: Array<{ key: keyof ReviewFormData; label: string; placeholder: string }> }> = {
+const REVIEW_TEMPLATES: Record<TabPeriod, { title: string; description: string; fields: Array<{ key: ReviewFieldKey; label: string; placeholder: string }> }> = {
   daily: {
     title: '日复盘',
     description: '记录今天的成长与感悟',
@@ -891,6 +895,16 @@ export default function Reviews() {
     highlights: '', challenges: '', learnings: '', next_steps: '', gratitude: '', mood: 5,
     keep: '', problem: '', try_: '',
     objective_summary: '', reflective_summary: '', interpretive_summary: '', decisional_summary: '',
+    dimensions: {
+      '外型': 5,
+      '社交': 4,
+      '表达': 5,
+      '学习能力': 7,
+      '身体素质': 5,
+      '心理健康': 5,
+      '财务健康': 4,
+      '执行力': 4,
+    }
   });
 
   // 显示Toast
@@ -952,6 +966,10 @@ export default function Reviews() {
             keep: reviewData.keep || '', problem: reviewData.problem || '', try_: reviewData.try_ || '',
             objective_summary: reviewData.objective_summary || '', reflective_summary: reviewData.reflective_summary || '',
             interpretive_summary: reviewData.interpretive_summary || '', decisional_summary: reviewData.decisional_summary || '',
+            dimensions: reviewData.dimensions || {
+              '外型': 5, '社交': 4, '表达': 5, '学习能力': 7,
+              '身体素质': 5, '心理健康': 5, '财务健康': 4, '执行力': 4,
+            }
           });
         }
       } else {
@@ -963,6 +981,10 @@ export default function Reviews() {
             highlights: '', challenges: '', learnings: '', next_steps: '', gratitude: '', mood: 5,
             keep: '', problem: '', try_: '',
             objective_summary: '', reflective_summary: '', interpretive_summary: '', decisional_summary: '',
+            dimensions: {
+              '外型': 5, '社交': 4, '表达': 5, '学习能力': 7,
+              '身体素质': 5, '心理健康': 5, '财务健康': 4, '执行力': 4,
+            }
           });
         }
       }
@@ -994,10 +1016,10 @@ export default function Reviews() {
         let checkinCount = 0;
         try {
           const weekRes = await habitAPI.getWeek();
-          const habits = weekRes.data || [];
-          // habits 格式: [{ id, name, week_status: [{ date, actual, completed }, ...] }, ...]
-          habits.forEach((habit: any) => {
-            const todayStatus = habit.week_status?.find((s: any) => s.date === today);
+          const habits = weekRes.data?.habits || [];
+          // habits 格式: [{ habit: { id, name, ... }, week_status: [{ date, actual, completed }, ...] }, ...]
+          habits.forEach((item: any) => {
+            const todayStatus = item.week_status?.find((s: any) => s.date === today);
             if (todayStatus && todayStatus.actual > 0) {
               checkinCount++;
             }
@@ -1121,32 +1143,61 @@ export default function Reviews() {
 
   // 导出为 Markdown
   const exportToMarkdown = () => {
-    const date = format(currentDate, 'yyyy-MM-dd');
-    const lines = [
-      `# 📅 日复盘 - ${date}`,
-      '',
-      '## ⏰ 时间线',
-      ...(dailyForm.timeline.length > 0 
-        ? dailyForm.timeline.map(item => `- **${item.time}** ${item.content}`)
-        : ['暂无记录']),
-      '',
-      '## 📊 今日数据',
-      `- 完成任务: ${todayStats.completedTasks} 个`,
-      `- 习惯打卡: ${todayStats.habitCheckins} 个`,
-      `- 心情评分: ${dailyForm.mood}/10`,
-      '',
-      '## 📝 记录',
-      dailyForm.notes || '无',
-      '',
-      '## 🎯 明日计划',
-      dailyForm.tomorrow || '无',
-    ];
-    
+    const dateStr = format(currentDate, 'yyyy-MM-dd');
+    const periodDisplay = getPeriodDisplay();
+    let lines: string[] = [];
+
+    if (activeTab === 'daily') {
+      lines = [
+        `# 📅 日复盘 - ${dateStr}`,
+        '',
+        '## ⏰ 时间线',
+        ...(dailyForm.timeline.length > 0
+          ? dailyForm.timeline.map(item => `- **${item.time}** ${item.content}`)
+          : ['暂无记录']),
+        '',
+        '## 📊 今日数据',
+        `- 完成任务: ${todayStats.completedTasks} 个`,
+        `- 习惯打卡: ${todayStats.habitCheckins} 个`,
+        `- 心情评分: ${dailyForm.mood}/10`,
+        '',
+        '## 📝 记录',
+        dailyForm.notes || '无',
+        '',
+        '## 🎯 明日计划',
+        dailyForm.tomorrow || '无',
+      ];
+    } else {
+      const template = REVIEW_TEMPLATES[activeTab];
+      lines = [
+        `# 📅 ${template.title} - ${periodDisplay}`,
+        '',
+        ...(template.fields.map(field => `## ${field.label}\n\n${formData[field.key] || '无'}`)),
+        '',
+      ];
+
+      if ((activeTab === 'monthly' || activeTab === 'quarterly' || activeTab === 'yearly') && formData.dimensions) {
+        lines.push('## 📊 多维度打分');
+        Object.entries(formData.dimensions).forEach(([key, value]) => {
+          lines.push(`- ${key}: ${value}/10`);
+        });
+        lines.push('');
+      }
+
+      if (periodSummary) {
+        lines.push('## 📈 数据汇总');
+        lines.push(`- 任务完成: ${periodSummary.tasks.completed}/${periodSummary.tasks.total} (${periodSummary.tasks.completion_rate}%)`);
+        lines.push(`- 习惯打卡: ${periodSummary.habits.total_checkins}/${periodSummary.habits.total_target} (${periodSummary.habits.overall_rate}%)`);
+        lines.push(`- 活跃目标: ${periodSummary.goals.total} 个`);
+        lines.push(`- 活跃项目: ${periodSummary.projects.total} 个`);
+      }
+    }
+
     const blob = new Blob([lines.join('\n')], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `复盘-${date}.md`;
+    a.download = `复盘-${activeTab}-${periodDisplay.replace(/\s/g, '')}.md`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -1327,6 +1378,28 @@ export default function Reviews() {
             />
           </div>
         ))}
+        {(activeTab === 'monthly' || activeTab === 'quarterly' || activeTab === 'yearly') && formData.dimensions && (
+          <div className="space-y-3 pt-2">
+            <label className="block text-sm font-medium text-gray-700">📊 多维度打分 (1-10)</label>
+            {Object.entries(formData.dimensions).map(([key, value]) => (
+              <div key={key}>
+                <div className="flex justify-between text-sm mb-1">
+                  <span>{key}</span>
+                  <span className="font-medium text-primary-600">{value}</span>
+                </div>
+                <input
+                  type="range" min={1} max={10}
+                  value={value}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    dimensions: { ...formData.dimensions!, [key]: parseInt(e.target.value) }
+                  })}
+                  className="w-full"
+                />
+              </div>
+            ))}
+          </div>
+        )}
         {activeTab === 'daily' && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">😊 心情评分 (1-10)</label>
@@ -1496,7 +1569,7 @@ export default function Reviews() {
             {activeTab === 'daily' ? renderDailyForm() : renderFormFields()}
             
             {/* 导出按钮组 */}
-            {activeTab === 'daily' && (
+            {(
               <div className="flex gap-2 mt-4">
                 <button
                   onClick={exportToMarkdown}
@@ -1512,13 +1585,15 @@ export default function Reviews() {
                   <Download size={16} />
                   导出 PDF
                 </button>
-                <button
-                  onClick={generateCard}
-                  className="flex-1 btn-secondary flex items-center justify-center gap-2 py-2 text-sm"
-                >
-                  <ImageIcon size={16} />
-                  生成卡片
-                </button>
+                {activeTab === 'daily' && (
+                  <button
+                    onClick={generateCard}
+                    className="flex-1 btn-secondary flex items-center justify-center gap-2 py-2 text-sm"
+                  >
+                    <ImageIcon size={16} />
+                    生成卡片
+                  </button>
+                )}
               </div>
             )}
             
