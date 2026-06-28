@@ -181,7 +181,7 @@ function RecordDisplay({
   onReRecognize: () => void;
 }) {
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
       {/* 摘要信息 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         {type === 'diet' && (
