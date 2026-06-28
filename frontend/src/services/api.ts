@@ -310,8 +310,7 @@ export const visionAPI = {
   recognize: (reviewId: number, type: 'diet' | 'workout', imageFile: File) => {
     const formData = new FormData();
     formData.append('image', imageFile);
-    formData.append('type', type);
-    return apiClient.post(`/api/reviews/${reviewId}/recognize-image`, formData, {
+    return apiClient.post(`/api/reviews/${reviewId}/recognize-image?type=${type}`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
   },
