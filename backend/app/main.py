@@ -756,16 +756,17 @@ def get_habits_week(year: int = Query(None), week: int = Query(None), current_us
         total_actual = 0
         for d in week_dates:
             target = habit.get_target_for_date(d)
+            daily_target = habit.times_per_day
             log = next((l for l in logs if l.date == d), None)
             actual = log.count if log else 0
             total_actual += actual
-            
+
             week_status.append({
                 "date": d.isoformat(),
                 "weekday": d.weekday(),
-                "target": target,
+                "target": daily_target,
                 "actual": actual,
-                "completed": actual >= target if target > 0 else False,
+                "completed": (actual >= daily_target) if target > 0 else False,
             })
         
         weekly_target = habit.get_weekly_target_total()
