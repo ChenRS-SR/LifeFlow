@@ -124,6 +124,13 @@ function RecordUploader({
 
   return (
     <div className="bg-gray-50 rounded-lg p-4">
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleFileChange}
+      />
       <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
         <Icon size={16} className="text-primary-600" />
         {title}
@@ -134,13 +141,6 @@ function RecordUploader({
           onClick={() => inputRef.current?.click()}
           className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-primary-500 hover:bg-primary-50 transition-colors cursor-pointer"
         >
-          <input
-            ref={inputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={handleFileChange}
-          />
           {recognizing ? (
             <div className="flex items-center justify-center gap-2 text-primary-600">
               <Loader2 size={18} className="animate-spin" />
@@ -183,7 +183,7 @@ function RecordDisplay({
   return (
     <div className="space-y-3">
       {/* 摘要信息 */}
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         {type === 'diet' && (
           <>
             <div className="bg-white rounded p-2 text-center">
@@ -191,10 +191,16 @@ function RecordDisplay({
               <div className="text-xs text-gray-500">总热量 (kcal)</div>
             </div>
             <div className="bg-white rounded p-2 text-center">
-              <div className="text-lg font-bold text-blue-600">
-                {record.total_protein ?? '-'}/{record.total_carbs ?? '-'}/{record.total_fat ?? '-'}
-              </div>
-              <div className="text-xs text-gray-500">蛋/碳/脂 (g)</div>
+              <div className="text-lg font-bold text-blue-600">{record.total_protein ?? '-'}</div>
+              <div className="text-xs text-gray-500">蛋白质 (g)</div>
+            </div>
+            <div className="bg-white rounded p-2 text-center">
+              <div className="text-lg font-bold text-green-600">{record.total_carbs ?? '-'}</div>
+              <div className="text-xs text-gray-500">碳水 (g)</div>
+            </div>
+            <div className="bg-white rounded p-2 text-center">
+              <div className="text-lg font-bold text-yellow-600">{record.total_fat ?? '-'}</div>
+              <div className="text-xs text-gray-500">脂肪 (g)</div>
             </div>
           </>
         )}
@@ -205,14 +211,28 @@ function RecordDisplay({
               <div className="text-xs text-gray-500">时长 (min)</div>
             </div>
             <div className="bg-white rounded p-2 text-center">
-              <div className="text-lg font-bold text-purple-600">
-                {record.exercises?.length ?? '-'}
-              </div>
+              <div className="text-lg font-bold text-purple-600">{record.total_weight ?? '-'}</div>
+              <div className="text-xs text-gray-500">总重量 (kg)</div>
+            </div>
+            <div className="bg-white rounded p-2 text-center">
+              <div className="text-lg font-bold text-orange-600">{record.total_calories ?? '-'}</div>
+              <div className="text-xs text-gray-500">消耗 (kcal)</div>
+            </div>
+            <div className="bg-white rounded p-2 text-center">
+              <div className="text-lg font-bold text-blue-600">{record.exercises?.length ?? '-'}</div>
               <div className="text-xs text-gray-500">动作数</div>
             </div>
           </>
         )}
       </div>
+
+      {/* 训练部位 */}
+      {type === 'workout' && record.body_parts && record.body_parts.length > 0 && (
+        <div className="text-sm text-gray-600 bg-white rounded p-2">
+          <span className="font-medium">训练部位：</span>
+          {record.body_parts.join('、')}
+        </div>
+      )}
 
       {/* 详细列表 */}
       {type === 'diet' && record.meals && record.meals.length > 0 && (
@@ -243,12 +263,16 @@ function RecordDisplay({
             <div key={idx} className="border-b border-gray-100 last:border-0 pb-2 last:pb-0">
               <div className="font-medium text-gray-800">{exercise.name}</div>
               {exercise.sets && (
-                <div className="mt-1 text-xs text-gray-500">
-                  {exercise.sets.map((set: any, sidx: number) => (
-                    <span key={sidx} className="inline-block mr-2 bg-gray-100 rounded px-1.5 py-0.5">
-                      {set.weight} × {set.reps}{set.rpe ? ` @RPE${set.rpe}` : ''}
-                    </span>
-                  ))}
+                <div className="mt-1 text-xs text-gray-500 flex flex-wrap gap-1">
+                  {exercise.sets.map((set: any, sidx: number) => {
+                    const reps = typeof set.reps === 'number' ? set.reps : (set.reps ?? '-');
+                    return (
+                      <span key={sidx} className="inline-block bg-gray-100 rounded px-1.5 py-0.5">
+                        {set.weight ? `${set.weight} × ${reps}` : `${reps}次`}
+                        {set.rpe ? ` @RPE${set.rpe}` : ''}
+                      </span>
+                    );
+                  })}
                 </div>
               )}
             </div>
