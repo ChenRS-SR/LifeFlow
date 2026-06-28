@@ -16,21 +16,15 @@ from app.services.ai_client import AIClient, AIClientError
 
 DIET_SYSTEM_PROMPT = """你是一位专业的饮食记录分析助手。用户会上传一张「薄荷健康」App 的饮食记录截图。
 
-【截图结构】
-1. 顶部：
-   - 左侧「饮食摄入」：当天已摄入总热量（如 1775）
-   - 中间圆环「还可以吃」：剩余热量
-   - 圆环下方「自定义预算」：当日热量预算（如 2670）
-   - 右侧「运动消耗」
-2. 中部：三大营养素（碳水化合物、蛋白质、脂肪），每个条目显示为「当前摄入 / 推荐克数」，如：
-   - 碳水化合物 194 / 340克
-   - 蛋白质 102 / 174克
-   - 脂肪 66 / 68克
-3. 下部：按餐分组，每餐是一个卡片，包含：
-   - 餐名（早餐/午餐/晚餐/加餐/晚加餐）
-   - 建议热量范围（如"建议668-935千卡"）—— 这不是该餐总热量
-   - 该餐总热量：卡片右侧单独显示的绿色/深色数字 + "千卡"（如早餐 166千卡、午餐 532千卡）
-   - 食物列表：食物名称、重量/份量、每个食物的热量
+【截图布局】
+- 顶部是全天数据：饮食摄入、还可以吃、自定义预算、运动消耗、三大营养素。
+- 下方是按餐分组的卡片，每张卡片是一个餐（早餐/午餐/晚餐/加餐/晚加餐）。
+- 卡片内部：左侧有小食物图标，右侧是该餐的**所有食物条目**。每个食物条目包含：
+  1. 食物名称（字体稍大）
+  2. 重量/份量（如"250.0毫升"、"1.0一套"）
+  3. 该食物的热量（卡片最右侧，如"166 千卡"）
+- **同一卡片内的所有食物都属于该餐名**，不要因为食物名称在画面右侧就误判为独立餐。
+- 注意：截图里「晚加餐」卡片可能包含多个食物（例如奶片、清蒸大闸蟹），请全部归入晚加餐。
 
 【输出 JSON 格式】
 {
@@ -59,9 +53,10 @@ DIET_SYSTEM_PROMPT = """你是一位专业的饮食记录分析助手。用户�
 2. total_calories 是顶部「饮食摄入」的已摄入总热量；total_calories_target 是「自定义预算」的热量预算。
 3. total_protein/total_carbs/total_fat 是当前摄入数字；对应的 *_target 是推荐数字（如"194/340克"分别取 194 和 340）。
 4. 每餐的 calories 必须是该餐卡片右侧单独显示的总热量（如"早餐 166千卡"取 166，"午餐 532千卡"取 532），不是建议范围，也不是该餐第一个食物的热量。
-5. 食物 weight 保留原始单位字符串（如"250.0毫升"、"1.0一套"、"100.0克"）。
-6. 列出每餐所有食物，不要遗漏卡片底部的食物。
-7. 如果某字段识别不到，对应填 null。
+5. 每个食物都必须输出 name、weight、calories；calories 是该食物条目最右侧的热量数字，不要遗漏。
+6. 食物 weight 保留原始单位字符串（如"250.0毫升"、"1.0一套"、"100.0克"）。
+7. 列出每餐所有食物，不要遗漏卡片底部的食物。
+8. 如果某字段识别不到，对应填 null。
 """
 
 WORKOUT_SYSTEM_PROMPT = """你是一位专业的健身记录分析助手。用户会上传一张「训记」App 的训练记录截图。
@@ -292,42 +287,70 @@ class VisionService:
 
         return record
 
+    # 标准餐名
+    _MEAL_NAMES = frozenset(["早餐", "午餐", "晚餐", "加餐", "晚加餐", "早加餐", "午加餐"])
+
     def _normalize_diet_record(self, record: dict) -> dict:
         """
         后处理饮食记录：
-        1. 用每餐食物热量之和修正/补充该餐总热量
-        2. 清洗营养素数值
+        1. 把被误判为独立餐的食物合并回上一餐
+        2. 用每餐食物热量之和修正/补充该餐总热量
+        3. 清洗营养素数值
         """
         for key in ["total_calories", "total_protein", "total_carbs", "total_fat"]:
             record[key] = self._to_int(record.get(key))
 
-        meals = []
+        merged_meals = []
         for meal in record.get("meals", []):
             if not isinstance(meal, dict):
                 continue
+            name = (meal.get("name") or "").strip()
+            foods = meal.get("foods") or []
+            # 如果 name 不是标准餐名，且只有 1 个食物，认为是上一餐被错拆出来的食物
+            if name not in self._MEAL_NAMES and len(foods) <= 1 and merged_meals:
+                target = merged_meals[-1]
+                if foods:
+                    target.setdefault("foods", []).append(foods[0])
+                # 重新计算上一餐总热量
+                target["calories"] = self._sum_food_calories(target.get("foods", []))
+                continue
+            # 标准餐名但 foods 为空，则初始化为空列表
+            if not isinstance(foods, list):
+                foods = []
+            meal["foods"] = foods
+            meal["name"] = name
+            merged_meals.append(meal)
+
+        # 清洗每个食物并修正每餐总热量
+        for meal in merged_meals:
             foods = []
-            food_cal_sum = 0
             for f in meal.get("foods", []):
                 if not isinstance(f, dict):
                     continue
-                fc = self._to_int(f.get("calories"))
                 foods.append({
                     "name": f.get("name", ""),
                     "weight": f.get("weight", ""),
-                    "calories": fc,
+                    "calories": self._to_int(f.get("calories")),
                 })
-                if isinstance(fc, int):
-                    food_cal_sum += fc
             meal["foods"] = foods
-            # 如果 AI 返回的每餐总热量为空或明显等于首餐热量（常见错误），用食物之和覆盖
+            # 如果 AI 返回的每餐总热量为空或等于食物之和，用食物之和覆盖
             meal_cal = self._to_int(meal.get("calories"))
-            if food_cal_sum > 0 and (not meal_cal or meal_cal == food_cal_sum):
-                meal["calories"] = food_cal_sum
+            food_sum = self._sum_food_calories(foods)
+            if food_sum > 0 and (not meal_cal or meal_cal == food_sum):
+                meal["calories"] = food_sum
             else:
                 meal["calories"] = meal_cal
-            meals.append(meal)
-        record["meals"] = meals
+
+        record["meals"] = merged_meals
         return record
+
+    def _sum_food_calories(self, foods: list) -> int:
+        total = 0
+        for f in foods:
+            fc = self._to_int(f.get("calories") if isinstance(f, dict) else None)
+            if isinstance(fc, int):
+                total += fc
+        return total
 
     def _extract_diet_targets_from_raw(self, record: dict) -> dict:
         """如果 AI 没提取到热量预算/营养素推荐值，从 raw_text 正则补充"""
