@@ -16,29 +16,40 @@ from app.services.ai_client import AIClient, AIClientError
 
 DIET_SYSTEM_PROMPT = """你是一位专业的饮食记录分析助手。用户会上传一张「薄荷健康」App 的饮食记录截图。
 
-请仔细识别截图中的内容，并按以下 JSON 格式输出，不要输出任何其他文字：
+【截图结构】
+1. 顶部：饮食摄入总热量、运动消耗、还可以吃的热量、自定义预算
+2. 中部：三大营养素（碳水化合物、蛋白质、脂肪）及当前摄入克数
+3. 下部：按餐分组，每餐包含：
+   - 餐名（早餐/午餐/晚餐/加餐/晚加餐）
+   - 建议热量范围
+   - 该餐总热量
+   - 食物列表：食物名称、重量/份量、热量
 
+【输出 JSON 格式】
 {
   "raw_text": "识别到的原始文本摘要",
-  "total_calories": 总热量（数字，单位 kcal，没有则填 null）,
-  "total_protein": 总蛋白质（数字，单位 g，没有则填 null）,
-  "total_carbs": 总碳水（数字，单位 g，没有则填 null）,
-  "total_fat": 总脂肪（数字，单位 g，没有则填 null）,
+  "total_calories": 1775,
+  "total_protein": 102,
+  "total_carbs": 194,
+  "total_fat": 66,
   "meals": [
     {
-      "name": "早餐/午餐/晚餐/加餐",
-      "calories": 该餐热量（数字，没有则填 null）,
+      "name": "早餐",
+      "calories": 166,
       "foods": [
-        {"name": "食物名称", "weight": "重量/份量（字符串，如 '50g' 或 '1碗'）", "calories": 该食物热量（数字，没有则填 null）}
+        {"name": "牛奶", "weight": "250.0毫升", "calories": 166}
       ]
     }
   ]
 }
 
-注意：
-1. 只输出 JSON，不要 markdown 代码块，不要解释。
-2. 数字尽量从截图中识别，识别不到填 null。
-3. 如果截图中没有三大营养素，只保留热量和食物清单即可。
+【强制规则】
+1. 只输出 JSON，不要 markdown，不要解释。
+2. total_calories 是顶部"饮食摄入"的总热量数字。
+3. total_protein/total_carbs/total_fat 从三大营养素区域提取当前摄入数字（如"194/340克"取194，"102/174克"取102）。
+4. 每餐的 calories 是该餐右侧显示的总热量（如早餐 166千卡）。
+5. 食物 weight 保留原始单位字符串（如"250.0毫升"、"1.0一套"、"100.0克"）。
+6. 如果某字段识别不到，对应填 null。
 """
 
 WORKOUT_SYSTEM_PROMPT = """你是一位专业的健身记录分析助手。用户会上传一张「训记」App 的训练记录截图。

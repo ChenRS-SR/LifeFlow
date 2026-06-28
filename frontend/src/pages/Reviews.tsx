@@ -4,7 +4,7 @@ import {
   TrendingUp, Target, CheckCircle2, Folder, Plus, X, Clock,
   Smile, FileText, CalendarDays, Zap, Import, Search,
   Download, FileText as FileTextIcon, Image as ImageIcon,
-  Camera, Utensils, Dumbbell, Loader2
+  Camera, Utensils, Dumbbell, Loader2, Edit
 } from 'lucide-react';
 import { reviewsAPI, taskAPI, habitAPI, visionAPI } from '../services/api';
 import type { Review, TimelineItem, Task, Habit } from '../types';
@@ -100,6 +100,7 @@ function RecordUploader({
   record,
   recognizing,
   onRecognize,
+  onRecordChange,
   icon: Icon,
   title,
   placeholder
@@ -108,6 +109,7 @@ function RecordUploader({
   record: Record<string, any> | null | undefined;
   recognizing: boolean;
   onRecognize: (file: File) => void;
+  onRecordChange?: (record: Record<string, any>) => void;
   icon: React.ElementType;
   title: string;
   placeholder: string;
@@ -162,6 +164,7 @@ function RecordUploader({
           record={record}
           recognizing={recognizing}
           onReRecognize={() => inputRef.current?.click()}
+          onChange={onRecordChange}
         />
       )}
     </div>
@@ -173,53 +176,94 @@ function RecordDisplay({
   type,
   record,
   recognizing,
-  onReRecognize
+  onReRecognize,
+  onChange
 }: {
   type: 'diet' | 'workout';
   record: Record<string, any>;
   recognizing: boolean;
   onReRecognize: () => void;
+  onChange?: (record: Record<string, any>) => void;
 }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [localRecord, setLocalRecord] = useState(record);
+
+  useEffect(() => {
+    setLocalRecord(record);
+  }, [record]);
+
+  const handleSave = () => {
+    onChange?.(localRecord);
+    setIsEditing(false);
+  };
+
+  const handleCancel = () => {
+    setLocalRecord(record);
+    setIsEditing(false);
+  };
+
+  const updateIn = (obj: any, path: string[], updater: (val: any) => any): any => {
+    if (path.length === 0) return updater(obj);
+    const [head, ...tail] = path;
+    if (/^\d+$/.test(head)) {
+      const arr = [...(obj || [])];
+      const idx = Number(head);
+      arr[idx] = updateIn(arr[idx], tail, updater);
+      return arr;
+    }
+    return { ...obj, [head]: updateIn(obj?.[head], tail, updater) };
+  };
+
+  const setField = (path: string, value: any) => {
+    setLocalRecord(prev => updateIn(prev, path.split('.'), () => value));
+  };
+
+  const setArrayItemField = (path: string, field: string, value: any) => {
+    setLocalRecord(prev => updateIn(prev, path.split('.'), (item) => ({ ...item, [field]: value })));
+  };
+
+  const getField = (path: string) => {
+    return path.split('.').reduce((acc, key) => acc?.[key], localRecord);
+  };
+
+  const NumberInput = ({ path, label, colorClass }: { path: string; label: string; colorClass?: string }) => {
+    const value = getField(path);
+    return (
+      <div className="bg-white rounded p-2 text-center">
+        {isEditing ? (
+          <input
+            type="number"
+            value={value ?? ''}
+            onChange={(e) => setField(path, e.target.value === '' ? null : Number(e.target.value))}
+            className="w-full text-lg font-bold text-center border-b border-primary-300 focus:outline-none"
+          />
+        ) : (
+          <div className={`text-lg font-bold ${colorClass || 'text-gray-700'}`}>{value ?? '-'}</div>
+        )}
+        <div className="text-xs text-gray-500">{label}</div>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
       {/* 摘要信息 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         {type === 'diet' && (
           <>
-            <div className="bg-white rounded p-2 text-center">
-              <div className="text-lg font-bold text-orange-600">{record.total_calories ?? '-'}</div>
-              <div className="text-xs text-gray-500">总热量 (kcal)</div>
-            </div>
-            <div className="bg-white rounded p-2 text-center">
-              <div className="text-lg font-bold text-blue-600">{record.total_protein ?? '-'}</div>
-              <div className="text-xs text-gray-500">蛋白质 (g)</div>
-            </div>
-            <div className="bg-white rounded p-2 text-center">
-              <div className="text-lg font-bold text-green-600">{record.total_carbs ?? '-'}</div>
-              <div className="text-xs text-gray-500">碳水 (g)</div>
-            </div>
-            <div className="bg-white rounded p-2 text-center">
-              <div className="text-lg font-bold text-yellow-600">{record.total_fat ?? '-'}</div>
-              <div className="text-xs text-gray-500">脂肪 (g)</div>
-            </div>
+            <NumberInput path="total_calories" label="总热量 (kcal)" colorClass="text-orange-600" />
+            <NumberInput path="total_protein" label="蛋白质 (g)" colorClass="text-blue-600" />
+            <NumberInput path="total_carbs" label="碳水 (g)" colorClass="text-green-600" />
+            <NumberInput path="total_fat" label="脂肪 (g)" colorClass="text-yellow-600" />
           </>
         )}
         {type === 'workout' && (
           <>
+            <NumberInput path="duration_minutes" label="时长 (min)" colorClass="text-red-600" />
+            <NumberInput path="total_weight" label="总重量 (kg)" colorClass="text-purple-600" />
+            <NumberInput path="total_calories" label="消耗 (kcal)" colorClass="text-orange-600" />
             <div className="bg-white rounded p-2 text-center">
-              <div className="text-lg font-bold text-red-600">{record.duration_minutes ?? '-'}</div>
-              <div className="text-xs text-gray-500">时长 (min)</div>
-            </div>
-            <div className="bg-white rounded p-2 text-center">
-              <div className="text-lg font-bold text-purple-600">{record.total_weight ?? '-'}</div>
-              <div className="text-xs text-gray-500">总重量 (kg)</div>
-            </div>
-            <div className="bg-white rounded p-2 text-center">
-              <div className="text-lg font-bold text-orange-600">{record.total_calories ?? '-'}</div>
-              <div className="text-xs text-gray-500">消耗 (kcal)</div>
-            </div>
-            <div className="bg-white rounded p-2 text-center">
-              <div className="text-lg font-bold text-blue-600">{record.exercises?.length ?? '-'}</div>
+              <div className="text-lg font-bold text-blue-600">{localRecord.exercises?.length ?? '-'}</div>
               <div className="text-xs text-gray-500">动作数</div>
             </div>
           </>
@@ -227,27 +271,83 @@ function RecordDisplay({
       </div>
 
       {/* 训练部位 */}
-      {type === 'workout' && record.body_parts && record.body_parts.length > 0 && (
+      {type === 'workout' && (
         <div className="text-sm text-gray-600 bg-white rounded p-2">
           <span className="font-medium">训练部位：</span>
-          {record.body_parts.join('、')}
+          {isEditing ? (
+            <input
+              type="text"
+              value={(localRecord.body_parts || []).join('、')}
+              onChange={(e) => setField('body_parts', e.target.value.split(/[,，、]/).filter(Boolean))}
+              className="border-b border-primary-300 focus:outline-none w-full mt-1"
+              placeholder="用逗号/顿号分隔"
+            />
+          ) : (
+            <span>{(localRecord.body_parts || []).join('、') || '-'}</span>
+          )}
         </div>
       )}
 
       {/* 详细列表 */}
-      {type === 'diet' && record.meals && record.meals.length > 0 && (
+      {type === 'diet' && localRecord.meals && localRecord.meals.length > 0 && (
         <div className="bg-white rounded p-3 text-sm space-y-2">
-          {record.meals.map((meal: any, idx: number) => (
+          {localRecord.meals.map((meal: any, idx: number) => (
             <div key={idx} className="border-b border-gray-100 last:border-0 pb-2 last:pb-0">
-              <div className="flex justify-between font-medium text-gray-800">
-                <span>{meal.name}</span>
-                <span className="text-orange-600">{meal.calories ?? '-'} kcal</span>
+              <div className="flex justify-between font-medium text-gray-800 items-center">
+                {isEditing ? (
+                  <div className="flex items-center gap-2 flex-1">
+                    <input
+                      type="text"
+                      value={meal.name || ''}
+                      onChange={(e) => setArrayItemField(`meals.${idx}`, 'name', e.target.value)}
+                      className="border-b border-primary-300 focus:outline-none font-medium flex-1"
+                    />
+                    <input
+                      type="number"
+                      value={meal.calories ?? ''}
+                      onChange={(e) => setArrayItemField(`meals.${idx}`, 'calories', e.target.value === '' ? null : Number(e.target.value))}
+                      className="border-b border-primary-300 focus:outline-none w-16 text-right"
+                    />
+                    <span className="text-xs text-gray-500">kcal</span>
+                  </div>
+                ) : (
+                  <>
+                    <span>{meal.name}</span>
+                    <span className="text-orange-600">{meal.calories ?? '-'} kcal</span>
+                  </>
+                )}
               </div>
               {meal.foods && (
                 <ul className="mt-1 text-xs text-gray-500 space-y-0.5">
                   {meal.foods.map((food: any, fidx: number) => (
-                    <li key={fidx}>
-                      {food.name} {food.weight ? `(${food.weight})` : ''} {food.calories ? `- ${food.calories} kcal` : ''}
+                    <li key={fidx} className="flex items-center gap-1 flex-wrap">
+                      {isEditing ? (
+                        <>
+                          <input
+                            type="text"
+                            value={food.name || ''}
+                            onChange={(e) => setArrayItemField(`meals.${idx}.foods.${fidx}`, 'name', e.target.value)}
+                            className="border-b border-primary-300 focus:outline-none w-24"
+                          />
+                          <input
+                            type="text"
+                            value={food.weight || ''}
+                            onChange={(e) => setArrayItemField(`meals.${idx}.foods.${fidx}`, 'weight', e.target.value)}
+                            className="border-b border-primary-300 focus:outline-none w-20"
+                          />
+                          <input
+                            type="number"
+                            value={food.calories ?? ''}
+                            onChange={(e) => setArrayItemField(`meals.${idx}.foods.${fidx}`, 'calories', e.target.value === '' ? null : Number(e.target.value))}
+                            className="border-b border-primary-300 focus:outline-none w-14 text-right"
+                          />
+                          <span>kcal</span>
+                        </>
+                      ) : (
+                        <>
+                          {food.name} {food.weight ? `(${food.weight})` : ''} {food.calories ? `- ${food.calories} kcal` : ''}
+                        </>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -257,16 +357,41 @@ function RecordDisplay({
         </div>
       )}
 
-      {type === 'workout' && record.exercises && record.exercises.length > 0 && (
+      {type === 'workout' && localRecord.exercises && localRecord.exercises.length > 0 && (
         <div className="bg-white rounded p-3 text-sm space-y-2">
-          {record.exercises.map((exercise: any, idx: number) => (
+          {localRecord.exercises.map((exercise: any, idx: number) => (
             <div key={idx} className="border-b border-gray-100 last:border-0 pb-2 last:pb-0">
-              <div className="font-medium text-gray-800">{exercise.name}</div>
+              {isEditing ? (
+                <input
+                  type="text"
+                  value={exercise.name || ''}
+                  onChange={(e) => setArrayItemField(`exercises.${idx}`, 'name', e.target.value)}
+                  className="w-full font-medium text-gray-800 border-b border-primary-300 focus:outline-none"
+                />
+              ) : (
+                <div className="font-medium text-gray-800">{exercise.name}</div>
+              )}
               {exercise.sets && (
                 <div className="mt-1 text-xs text-gray-500 flex flex-wrap gap-1">
                   {exercise.sets.map((set: any, sidx: number) => {
                     const reps = typeof set.reps === 'number' ? set.reps : (set.reps ?? '-');
-                    return (
+                    return isEditing ? (
+                      <span key={sidx} className="inline-flex items-center gap-1 bg-gray-100 rounded px-1.5 py-0.5">
+                        <input
+                          type="text"
+                          value={set.weight || ''}
+                          onChange={(e) => setArrayItemField(`exercises.${idx}.sets.${sidx}`, 'weight', e.target.value)}
+                          className="w-12 border-b border-primary-300 focus:outline-none bg-transparent"
+                        />
+                        <span>×</span>
+                        <input
+                          type="number"
+                          value={set.reps ?? ''}
+                          onChange={(e) => setArrayItemField(`exercises.${idx}.sets.${sidx}`, 'reps', e.target.value === '' ? null : Number(e.target.value))}
+                          className="w-10 border-b border-primary-300 focus:outline-none bg-transparent text-right"
+                        />
+                      </span>
+                    ) : (
                       <span key={sidx} className="inline-block bg-gray-100 rounded px-1.5 py-0.5">
                         {set.weight ? `${set.weight} × ${reps}` : `${reps}次`}
                         {set.rpe ? ` @RPE${set.rpe}` : ''}
@@ -281,31 +406,62 @@ function RecordDisplay({
       )}
 
       {/* 原始文本折叠 */}
-      {record.raw_text && (
+      {localRecord.raw_text && (
         <details className="text-xs text-gray-500">
           <summary className="cursor-pointer hover:text-gray-700">识别原始文本</summary>
-          <pre className="mt-2 p-2 bg-white rounded whitespace-pre-wrap">{record.raw_text}</pre>
+          <pre className="mt-2 p-2 bg-white rounded whitespace-pre-wrap">{localRecord.raw_text}</pre>
         </details>
       )}
 
-      {/* 重新识别按钮 */}
-      <button
-        onClick={onReRecognize}
-        disabled={recognizing}
-        className="w-full py-2 text-sm text-primary-600 border border-primary-200 rounded-lg hover:bg-primary-50 disabled:opacity-50 flex items-center justify-center gap-1"
-      >
-        {recognizing ? (
+      {/* 操作按钮 */}
+      <div className="flex gap-2">
+        {onChange && (
           <>
-            <Loader2 size={16} className="animate-spin" />
-            识别中...
-          </>
-        ) : (
-          <>
-            <Camera size={16} />
-            重新识别
+            {isEditing ? (
+              <>
+                <button
+                  onClick={handleSave}
+                  className="flex-1 py-2 text-sm text-white bg-primary-600 rounded-lg hover:bg-primary-700 flex items-center justify-center gap-1"
+                >
+                  <Save size={16} />
+                  保存修改
+                </button>
+                <button
+                  onClick={handleCancel}
+                  className="flex-1 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center justify-center gap-1"
+                >
+                  取消
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => setIsEditing(true)}
+                className="flex-1 py-2 text-sm text-primary-600 border border-primary-200 rounded-lg hover:bg-primary-50 flex items-center justify-center gap-1"
+              >
+                <Edit size={16} />
+                编辑
+              </button>
+            )}
           </>
         )}
-      </button>
+        <button
+          onClick={onReRecognize}
+          disabled={recognizing}
+          className="flex-1 py-2 text-sm text-primary-600 border border-primary-200 rounded-lg hover:bg-primary-50 disabled:opacity-50 flex items-center justify-center gap-1"
+        >
+          {recognizing ? (
+            <>
+              <Loader2 size={16} className="animate-spin" />
+              识别中...
+            </>
+          ) : (
+            <>
+              <Camera size={16} />
+              重新识别
+            </>
+          )}
+        </button>
+      </div>
     </div>
   );
 }
@@ -1583,6 +1739,7 @@ export default function Reviews() {
             record={dailyForm.diet_record}
             recognizing={recognizing.diet}
             onRecognize={(file) => handleRecognize('diet', file)}
+            onRecordChange={(record) => setDailyForm(prev => ({ ...prev, diet_record: record }))}
           />
           <RecordUploader
             type="workout"
@@ -1592,6 +1749,7 @@ export default function Reviews() {
             record={dailyForm.workout_record}
             recognizing={recognizing.workout}
             onRecognize={(file) => handleRecognize('workout', file)}
+            onRecordChange={(record) => setDailyForm(prev => ({ ...prev, workout_record: record }))}
           />
         </div>
 
