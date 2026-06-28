@@ -5,7 +5,7 @@ import {
   X, Filter, Settings, Trash2, Save, BookOpen,
   ArrowLeft, CheckSquare, ChevronLeft, ChevronRight, Menu
 } from 'lucide-react';
-import { format, startOfWeek, endOfWeek, eachDayOfInterval, isSameDay, isToday, isPast, parseISO, isWithinInterval } from 'date-fns';
+import { format, startOfWeek, endOfWeek, eachDayOfInterval, isSameDay, isToday, isPast, parseISO, isWithinInterval, getISOWeek } from 'date-fns';
 import { taskAPI, projectAPI } from '../services/api';
 
 type ViewType = 'inbox' | 'today' | 'week' | 'overdue' | 'todo' | 'completed' | 'someday' | 'trash' | 'detail' | 'project';
@@ -188,7 +188,7 @@ export default function Tasks() {
   // 加载数据
   useEffect(() => {
     loadData();
-  }, [currentView, selectedProject?.id]);
+  }, [currentView, selectedProject?.id, weekOffset]);
 
   // 大纲弹窗打开时立即同步内容，避免延迟
   useEffect(() => {
@@ -246,8 +246,13 @@ export default function Tasks() {
         setTodayCompletedTasks(completedRes.data || []);
         setProjects(projectsRes.data || []);
       } else {
+        // 周视图需要传递 year/week 参数
+        const baseDate = new Date();
+        baseDate.setDate(baseDate.getDate() + weekOffset * 7);
         const [tasksRes, projectsRes] = await Promise.all([
-          taskAPI.list(currentView === 'detail' || currentView === 'week' ? 'all' : currentView),
+          currentView === 'week'
+            ? taskAPI.list('week', baseDate.getFullYear(), getISOWeek(baseDate))
+            : taskAPI.list(currentView === 'detail' ? 'all' : currentView),
           projectAPI.list(),
         ]);
         const loadedTasks = tasksRes.data || [];
@@ -1309,8 +1314,10 @@ export default function Tasks() {
     const weekDays = eachDayOfInterval({ start: weekStart, end: weekEnd });
     
     // 获取任务的计划日期（用于周视图显示）
-    // 优先使用 scheduled_date（计划执行日期），如果没有则使用 due_date（截止日期）
-    const getTaskScheduledDate = (task: Task): string | null => task.scheduled_date || task.due_date || null;
+    // 优先级：scheduled_date > due_date > completed_date
+    // 这样已完成但计划日期不在本周的任务，会显示在完成日期那天的列里
+    const getTaskScheduledDate = (task: Task): string | null =>
+      task.scheduled_date || task.due_date || task.completed_date || null;
     
     // 获取任务的截止日期
     const getTaskDueDate = (task: Task): string | null => task.due_date || null;

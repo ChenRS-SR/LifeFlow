@@ -99,7 +99,10 @@ def list_projects(current_user: models.User = Depends(get_current_active_user), 
 @app.get("/api/projects/{project_id}")
 def get_project(project_id: int, current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)):
     """获取项目详情"""
-    p = db.query(models.Project).filter(models.Project.id == project_id).first()
+    p = db.query(models.Project).filter(
+        models.Project.id == project_id,
+        models.Project.user_id == current_user.id
+    ).first()
     if not p:
         raise HTTPException(status_code=404, detail="项目不存在")
     
@@ -171,7 +174,10 @@ def update_project(
     current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)
 ):
     """更新项目"""
-    p = db.query(models.Project).filter(models.Project.id == project_id).first()
+    p = db.query(models.Project).filter(
+        models.Project.id == project_id,
+        models.Project.user_id == current_user.id
+    ).first()
     if not p:
         raise HTTPException(status_code=404, detail="项目不存在")
     
@@ -207,7 +213,10 @@ def update_project(
 @app.delete("/api/projects/{project_id}")
 def delete_project(project_id: int, current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)):
     """删除项目"""
-    p = db.query(models.Project).filter(models.Project.id == project_id).first()
+    p = db.query(models.Project).filter(
+        models.Project.id == project_id,
+        models.Project.user_id == current_user.id
+    ).first()
     if not p:
         raise HTTPException(status_code=404, detail="项目不存在")
     
@@ -293,7 +302,10 @@ def update_goal(
     current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)
 ):
     """更新目标"""
-    g = db.query(models.Goal).filter(models.Goal.id == goal_id).first()
+    g = db.query(models.Goal).filter(
+        models.Goal.id == goal_id,
+        models.Goal.user_id == current_user.id
+    ).first()
     if not g:
         raise HTTPException(status_code=404, detail="目标不存在")
     
@@ -322,7 +334,10 @@ def update_goal(
 @app.delete("/api/goals/{goal_id}")
 def delete_goal(goal_id: int, current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)):
     """删除目标"""
-    g = db.query(models.Goal).filter(models.Goal.id == goal_id).first()
+    g = db.query(models.Goal).filter(
+        models.Goal.id == goal_id,
+        models.Goal.user_id == current_user.id
+    ).first()
     if not g:
         raise HTTPException(status_code=404, detail="目标不存在")
     
@@ -346,6 +361,8 @@ class TaskCreate(BaseModel):
 @app.get("/api/tasks/")
 def list_tasks(
     view: str = Query("all"),  # all/today/week/overdue/inbox/todo/completed
+    year: Optional[int] = Query(None),
+    week: Optional[int] = Query(None),
     current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)
 ):
     """获取任务列表（支持多视图）"""
@@ -372,18 +389,26 @@ def list_tasks(
             models.Task.completed_date == today
         )
     elif view == "week":
-        # 本周：截止日期或计划日期在本周（包含已完成）
-        week_start = today - timedelta(days=today.weekday())  # 周一
-        week_end = week_start + timedelta(days=6)  # 周日
+        # 本周：计划/截止日期在本周，或完成日期在本周（方案 B：本周活跃过的任务）
+        week_year = year or today.year
+        week_num = week or today.isocalendar()[1]
+        from datetime import datetime as dt
+        week_start = dt.strptime(f'{week_year}-W{week_num}-1', '%G-W%V-%u').date()
+        week_end = week_start + timedelta(days=6)
         query = query.filter(
             models.Task.is_inbox == 0,
-            ((models.Task.due_date >= week_start) & (models.Task.due_date <= week_end)) |
-            ((models.Task.scheduled_date >= week_start) & (models.Task.scheduled_date <= week_end))
+            models.Task.task_type != TaskType.TRASH,
+            (
+                ((models.Task.due_date >= week_start) & (models.Task.due_date <= week_end)) |
+                ((models.Task.scheduled_date >= week_start) & (models.Task.scheduled_date <= week_end)) |
+                ((models.Task.completed_date >= week_start) & (models.Task.completed_date <= week_end))
+            )
         )
     elif view == "overdue":
-        # 已逾期：截止日期已过且未完成
+        # 已逾期：截止日期已过且未完成、非垃圾箱
         query = query.filter(
             models.Task.status != TaskStatus.COMPLETED,
+            models.Task.task_type != TaskType.TRASH,
             models.Task.due_date < today,
             models.Task.due_date != None
         )
@@ -553,7 +578,7 @@ def create_task(task: TaskCreate, current_user: models.User = Depends(get_curren
         scheduled_type=task.scheduled_type,
         estimated_pomodoros=task.estimated_pomodoros,
         project_id=task.project_id,
-        is_inbox=task.is_inbox
+        is_inbox=1 if task.task_type == 'inbox' else 0
     )
     db.add(db_task)
     db.commit()
@@ -658,18 +683,6 @@ def complete_task(
 
     db.commit()
 
-    # 更新项目进度
-    if t.project_id:
-        project = db.query(models.Project).filter(models.Project.id == t.project_id).first()
-        if project:
-            total = db.query(models.Task).filter(models.Task.project_id == project.id).count()
-            completed = db.query(models.Task).filter(
-                models.Task.project_id == project.id,
-                models.Task.status == TaskStatus.COMPLETED
-            ).count()
-            project.progress = round(completed / total * 100, 1)
-            db.commit()
-
     return {
         "id": t.id,
         "status": t.status.value,
@@ -681,7 +694,10 @@ def complete_task(
 @app.delete("/api/tasks/{task_id}")
 def delete_task(task_id: int, current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)):
     """删除任务"""
-    t = db.query(models.Task).filter(models.Task.id == task_id).first()
+    t = db.query(models.Task).filter(
+        models.Task.id == task_id,
+        models.Task.user_id == current_user.id
+    ).first()
     if not t:
         raise HTTPException(status_code=404, detail="任务不存在")
     
@@ -693,6 +709,7 @@ def delete_task(task_id: int, current_user: models.User = Depends(get_current_ac
 @app.get("/api/habits/")
 def list_habits(current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)):
     habits = db.query(models.Habit).filter(
+        models.Habit.user_id == current_user.id,
         models.Habit.is_active == True,
         models.Habit.is_archived == False
     ).order_by(models.Habit.sort_order).all()
@@ -722,6 +739,7 @@ def get_habits_week(year: int = Query(None), week: int = Query(None), current_us
     week_dates = [week_start + timedelta(days=i) for i in range(7)]
     
     habits = db.query(models.Habit).filter(
+        models.Habit.user_id == current_user.id,
         models.Habit.is_active == True,
         models.Habit.is_archived == False
     ).order_by(models.Habit.sort_order).all()
@@ -816,18 +834,19 @@ def toggle_habit(data: HabitToggleRequest, current_user: models.User = Depends(g
         models.HabitLog.date == toggle_date
     ).first()
     
-    target = habit.get_target_for_date(toggle_date)
-    
+    target = habit.times_per_day
+
     if data.count is not None:
         # 直接设置次数
         new_count = data.count
-    elif log and log.count > 0:
-        # 已打卡则取消
-        new_count = 0
     else:
-        # 未打卡则打卡一次
-        new_count = 1
-    
+        # 智能 toggle：当前次数 >= 目标则取消，否则 +1
+        current = log.count if log else 0
+        if current >= target:
+            new_count = 0
+        else:
+            new_count = current + 1
+
     if log:
         log.count = new_count
     else:
@@ -838,9 +857,9 @@ def toggle_habit(data: HabitToggleRequest, current_user: models.User = Depends(g
             count=new_count
         )
         db.add(log)
-    
+
     db.commit()
-    return {"success": True, "count": new_count}
+    return {"success": True, "count": new_count, "target": target, "completed": new_count >= target}
 
 class HabitCreateRequest(BaseModel):
     name: str
@@ -889,7 +908,10 @@ def update_habit_api(
     current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)
 ):
     """更新习惯"""
-    h = db.query(models.Habit).filter(models.Habit.id == habit_id).first()
+    h = db.query(models.Habit).filter(
+        models.Habit.id == habit_id,
+        models.Habit.user_id == current_user.id
+    ).first()
     if not h:
         raise HTTPException(status_code=404, detail="习惯不存在")
     
@@ -917,7 +939,10 @@ def update_habit_api(
 @app.delete("/api/habits/{habit_id}")
 def delete_habit_api(habit_id: int, current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)):
     """删除习惯"""
-    h = db.query(models.Habit).filter(models.Habit.id == habit_id).first()
+    h = db.query(models.Habit).filter(
+        models.Habit.id == habit_id,
+        models.Habit.user_id == current_user.id
+    ).first()
     if not h:
         raise HTTPException(status_code=404, detail="习惯不存在")
     
@@ -961,6 +986,14 @@ def _update_project_progress(db: Session, project_id: int):
 @app.get("/api/projects/{project_id}/goals")
 def list_project_goals(project_id: int, current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)):
     """获取项目的目标列表"""
+    # 验证项目归属
+    project = db.query(models.Project).filter(
+        models.Project.id == project_id,
+        models.Project.user_id == current_user.id
+    ).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
     goals = db.query(models.ProjectGoal).filter(
         models.ProjectGoal.project_id == project_id
     ).order_by(models.ProjectGoal.sort_order, models.ProjectGoal.created_at).all()
@@ -984,13 +1017,17 @@ def create_project_goal(
     current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)
 ):
     """创建项目目标"""
-    project = db.query(models.Project).filter(models.Project.id == project_id).first()
+    # 验证项目归属
+    project = db.query(models.Project).filter(
+        models.Project.id == project_id,
+        models.Project.user_id == current_user.id
+    ).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
-    
+
     goal = models.ProjectGoal(
         project_id=project_id,
-        user_id=current_user.id,  # 默认用户
+        user_id=current_user.id,
         title=req.title,
         description=req.description,
         sort_order=req.sort_order,
@@ -1021,6 +1058,14 @@ def update_project_goal(
     current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)
 ):
     """更新项目目标"""
+    # 验证项目归属
+    project = db.query(models.Project).filter(
+        models.Project.id == project_id,
+        models.Project.user_id == current_user.id
+    ).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
     goal = db.query(models.ProjectGoal).filter(
         models.ProjectGoal.id == goal_id,
         models.ProjectGoal.project_id == project_id
@@ -1064,6 +1109,14 @@ def delete_project_goal(
     current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)
 ):
     """删除项目目标"""
+    # 验证项目归属
+    project = db.query(models.Project).filter(
+        models.Project.id == project_id,
+        models.Project.user_id == current_user.id
+    ).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
     goal = db.query(models.ProjectGoal).filter(
         models.ProjectGoal.id == goal_id,
         models.ProjectGoal.project_id == project_id
@@ -1088,6 +1141,14 @@ def toggle_project_goal(
     current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)
 ):
     """切换目标完成状态"""
+    # 验证项目归属
+    project = db.query(models.Project).filter(
+        models.Project.id == project_id,
+        models.Project.user_id == current_user.id
+    ).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
     goal = db.query(models.ProjectGoal).filter(
         models.ProjectGoal.id == goal_id,
         models.ProjectGoal.project_id == project_id
@@ -1122,11 +1183,14 @@ def reorder_project_goals(
     current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)
 ):
     """批量更新目标排序"""
-    # 验证项目存在
-    project = db.query(models.Project).filter(models.Project.id == project_id).first()
+    # 验证项目归属
+    project = db.query(models.Project).filter(
+        models.Project.id == project_id,
+        models.Project.user_id == current_user.id
+    ).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
-    
+
     # 更新每个目标的排序
     for index, goal_id in enumerate(req.goal_ids):
         goal = db.query(models.ProjectGoal).filter(

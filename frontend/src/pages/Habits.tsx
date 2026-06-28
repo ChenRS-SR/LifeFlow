@@ -70,8 +70,8 @@ export default function Habits() {
         // 已完成则取消（重置为0）
         await habitsAPI.uncheck(habitId, dateStr);
       } else {
-        // 未完成：打卡（设为1，表示当日已完成）
-        await habitsAPI.check(habitId, dateStr, 1);
+        // 未完成：让后端做智能增量
+        await habitsAPI.check(habitId, dateStr);
       }
       loadWeekData();
     } catch (error) {

@@ -64,6 +64,7 @@ def get_dashboard_stats(
     ).count()
 
     # 5. 本周数据
+    week_end = week_start + timedelta(days=6)
     week_tasks_completed = db.query(models.Task).filter(
         models.Task.user_id == current_user.id,
         models.Task.status == TaskStatus.COMPLETED,
@@ -72,8 +73,11 @@ def get_dashboard_stats(
 
     week_tasks_total = db.query(models.Task).filter(
         models.Task.user_id == current_user.id,
-        ((models.Task.scheduled_date >= week_start) & (models.Task.scheduled_date <= today)) |
-        ((models.Task.due_date >= week_start) & (models.Task.due_date <= today))
+        models.Task.task_type != TaskType.TRASH,
+        models.Task.is_inbox == 0,
+        ((models.Task.scheduled_date >= week_start) & (models.Task.scheduled_date <= week_end)) |
+        ((models.Task.due_date >= week_start) & (models.Task.due_date <= week_end)) |
+        ((models.Task.completed_date >= week_start) & (models.Task.completed_date <= week_end))
     ).count()
 
     # 6. 活跃目标数
@@ -83,18 +87,23 @@ def get_dashboard_stats(
     ).count()
 
     # 7. 习惯统计
-    total_habits = db.query(models.Habit).filter(
+    habits = db.query(models.Habit).filter(
         models.Habit.user_id == current_user.id,
         models.Habit.is_active == True,
         models.Habit.is_archived == False
-    ).count()
+    ).all()
+    total_habits = len(habits)
+    habit_map = {h.id: h for h in habits}
 
     # 8. 今日习惯打卡情况
     today_habit_logs = db.query(models.HabitLog).filter(
         models.HabitLog.user_id == current_user.id,
         models.HabitLog.date == today
     ).all()
-    completed_habits = len([log for log in today_habit_logs if log.count > 0])
+    completed_habits = sum(
+        1 for log in today_habit_logs
+        if log.habit_id in habit_map and log.count >= habit_map[log.habit_id].times_per_day
+    )
 
     # 9. 项目列表（带进度）
     projects = db.query(models.Project).filter(

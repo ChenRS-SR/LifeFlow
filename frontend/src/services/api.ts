@@ -132,8 +132,8 @@ export const projectAPI = {
 // ==================== 任务 API ====================
 export const taskAPI = {
   // 获取任务列表，支持多种视图：all/today/week/overdue/inbox/todo/completed
-  list: (view: string = 'all') =>
-    apiClient.get('/api/tasks/', { params: { view } }),
+  list: (view: string = 'all', year?: number, week?: number) =>
+    apiClient.get('/api/tasks/', { params: { view, year, week } }),
   
   // 获取本周日历数据
   getWeekCalendar: (year?: number, week?: number) =>
@@ -203,9 +203,9 @@ export const habitsAPI = {
     return res.data;
   },
   
-  // 勾选习惯（Habits.tsx 使用）
-  check: (habitId: number, date: string, count: number = 1) =>
-    apiClient.post('/api/habits/toggle', { habit_id: habitId, date, count }),
+  // 勾选习惯（Habits.tsx 使用），不传 count 让后端做智能增量
+  check: (habitId: number, date: string) =>
+    apiClient.post('/api/habits/toggle', { habit_id: habitId, date }),
   
   // 取消勾选（Habits.tsx 使用）
   uncheck: (habitId: number, date: string) =>
