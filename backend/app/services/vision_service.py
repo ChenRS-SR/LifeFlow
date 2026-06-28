@@ -55,7 +55,7 @@ DIET_SYSTEM_PROMPT = """你是一位专业的饮食记录分析助手。用户�
 4. 每餐的 calories 必须是该餐卡片右侧单独显示的总热量（如"早餐 166千卡"取 166，"午餐 532千卡"取 532），不是建议范围，也不是该餐第一个食物的热量。
 5. 每个食物都必须输出 name、weight、calories；calories 是该食物条目最右侧的热量数字，不要遗漏。
 6. 食物 weight 保留原始单位字符串（如"250.0毫升"、"1.0一套"、"100.0克"）。
-7. 列出每餐所有食物，不要遗漏卡片底部的食物。
+7. 注意区分「晚餐」和「晚加餐」：截图中如果晚餐卡片之后还有一个餐，请务必识别出「晚加餐」三个字，不要漏掉「加」字。晚加餐可能包含奶片、清蒸大闸蟹等食物。
 8. 如果某字段识别不到，对应填 null。
 """
 
@@ -289,60 +289,98 @@ class VisionService:
 
     # 标准餐名
     _MEAL_NAMES = frozenset(["早餐", "午餐", "晚餐", "加餐", "晚加餐", "早加餐", "午加餐"])
+    _DUPLICATE_MEAL_MAP = {"早餐": "早加餐", "午餐": "午加餐", "晚餐": "晚加餐"}
 
     def _normalize_diet_record(self, record: dict) -> dict:
         """
         后处理饮食记录：
-        1. 把被误判为独立餐的食物合并回上一餐
-        2. 用每餐食物热量之和修正/补充该餐总热量
-        3. 清洗营养素数值
+        1. 连续同名餐（如两个"晚餐"）把第二个改名为对应加餐
+        2. 为缺失名称的食物从 raw_text 推断食物名
+        3. 用每餐食物热量之和修正/补充该餐总热量
+        4. 清洗营养素数值
         """
         for key in ["total_calories", "total_protein", "total_carbs", "total_fat"]:
             record[key] = self._to_int(record.get(key))
 
+        raw = record.get("raw_text", "")
         merged_meals = []
         for meal in record.get("meals", []):
             if not isinstance(meal, dict):
                 continue
             name = (meal.get("name") or "").strip()
             foods = meal.get("foods") or []
-            # 如果 name 不是标准餐名，且只有 1 个食物，认为是上一餐被错拆出来的食物
-            if name not in self._MEAL_NAMES and len(foods) <= 1 and merged_meals:
-                target = merged_meals[-1]
-                if foods:
-                    target.setdefault("foods", []).append(foods[0])
-                # 重新计算上一餐总热量
-                target["calories"] = self._sum_food_calories(target.get("foods", []))
-                continue
-            # 标准餐名但 foods 为空，则初始化为空列表
             if not isinstance(foods, list):
                 foods = []
-            meal["foods"] = foods
-            meal["name"] = name
-            merged_meals.append(meal)
+            meal_cal = self._to_int(meal.get("calories"))
 
-        # 清洗每个食物并修正每餐总热量
+            # 连续同名餐：第二个改名为对应加餐（晚餐->晚加餐等）
+            if merged_meals and merged_meals[-1]["name"] == name and name in self._DUPLICATE_MEAL_MAP:
+                name = self._DUPLICATE_MEAL_MAP[name]
+
+            merged_meals.append({"name": name, "calories": meal_cal, "foods": foods})
+
+        # 清洗食物并推断缺失名称
         for meal in merged_meals:
-            foods = []
+            cleaned_foods = []
             for f in meal.get("foods", []):
                 if not isinstance(f, dict):
                     continue
-                foods.append({
-                    "name": f.get("name", ""),
-                    "weight": f.get("weight", ""),
-                    "calories": self._to_int(f.get("calories")),
-                })
-            meal["foods"] = foods
-            # 如果 AI 返回的每餐总热量为空或等于食物之和，用食物之和覆盖
+                weight = f.get("weight", "")
+                calories = self._to_int(f.get("calories"))
+                name = (f.get("name") or "").strip()
+                if not name:
+                    name = self._infer_food_name(raw, weight, calories)
+                cleaned_foods.append({"name": name, "weight": weight, "calories": calories})
+            meal["foods"] = cleaned_foods
+
+            # 修正每餐总热量：优先使用食物热量之和（AI 常把首个食物热量错当成餐总热量）
             meal_cal = self._to_int(meal.get("calories"))
-            food_sum = self._sum_food_calories(foods)
-            if food_sum > 0 and (not meal_cal or meal_cal == food_sum):
-                meal["calories"] = food_sum
-            else:
-                meal["calories"] = meal_cal
+            food_sum = self._sum_food_calories(cleaned_foods)
+            meal["calories"] = food_sum if food_sum > 0 else meal_cal
 
         record["meals"] = merged_meals
         return record
+
+    def _infer_food_name(self, raw: str, weight: str, calories: Optional[int]) -> str:
+        """从 raw_text 中为缺失名称的食物推断食物名"""
+        if not isinstance(raw, str) or not raw.strip():
+            return ""
+        lines = [l.strip() for l in raw.splitlines() if l.strip()]
+        for i, line in enumerate(lines):
+            if calories is None or str(calories) not in line or "千卡" not in line:
+                continue
+            # 如果提供了 weight，要求 weight 出现在附近几行内，避免误配
+            if weight:
+                nearby = lines[max(0, i - 3):min(len(lines), i + 4)]
+                if not any(weight in l for l in nearby):
+                    continue
+            # 往前找第一个像食物名的行
+            for j in range(i - 1, -1, -1):
+                candidate = lines[j]
+                if self._looks_like_food_name(candidate):
+                    return candidate
+        return ""
+
+    def _looks_like_food_name(self, text: str) -> bool:
+        """判断一行文本是否像食物名"""
+        text = text.strip()
+        if not text:
+            return False
+        # 排除标准餐名
+        if text in self._MEAL_NAMES:
+            return False
+        # 排除热量/重量行
+        if re.search(r"\d+\s*千卡", text):
+            return False
+        if re.search(r"\d+(\.\d+)?\s*(克|毫升|两|份|套)", text):
+            return False
+        # 排除建议范围
+        if "建议" in text and "千卡" in text:
+            return False
+        # 排除 App 相关文字
+        if text in ("薄荷健康", "体重管理就用薄荷健康", "AI算热量记饮食"):
+            return False
+        return True
 
     def _sum_food_calories(self, foods: list) -> int:
         total = 0
