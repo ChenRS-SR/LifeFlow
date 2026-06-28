@@ -222,7 +222,7 @@ function RecordDisplay({
     setLocalRecord(prev => updateIn(prev, path.split('.'), (item) => ({ ...item, [field]: value })));
   };
 
-  const getField = (path: string) => {
+  const getField = (path: string): any => {
     return path.split('.').reduce((acc, key) => acc?.[key], localRecord);
   };
 
