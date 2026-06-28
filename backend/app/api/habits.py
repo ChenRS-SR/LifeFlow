@@ -3,270 +3,268 @@
 
 习惯的增删改查和每日打卡
 """
-from typing import Any, List, Optional
-from datetime import date, timedelta
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from typing import Optional, List
+from datetime import date, datetime, timedelta
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
 
 from app.api.deps import get_db, get_current_active_user
-from app import models, schemas
+from app import models
+from app.models.habit import HabitFrequency
 
 router = APIRouter(prefix="/habits", tags=["习惯追踪"])
 
 
-@router.get("/", response_model=List[schemas.Habit])
-def list_habits(
-    is_active: Optional[bool] = True,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user)
-):
-    """
-    获取习惯列表
-    
-    参数：is_active - 是否只显示活跃的习惯（默认 True）
-    """
-    query = db.query(models.Habit).filter(models.Habit.user_id == current_user.id)
-    
-    if is_active is not None:
-        query = query.filter(models.Habit.is_active == is_active)
-    
-    habits = query.order_by(models.Habit.created_at.desc()).all()
-    return habits
+class HabitToggleRequest(BaseModel):
+    habit_id: int
+    date: str
+    count: Optional[int] = None
 
 
-@router.post("/", response_model=schemas.Habit, status_code=status.HTTP_201_CREATED)
-def create_habit(
-    habit_in: schemas.HabitCreate,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user)
-):
-    """
-    创建新习惯
-    
-    示例：
-        POST /habits/
-        {
-            "name": "早起",
-            "description": "早上6点前起床",
-            "icon": "🌅",
-            "color": "#F59E0B",
-            "frequency": "daily",
-            "target_times": 1
-        }
-    """
+class HabitCreateRequest(BaseModel):
+    name: str
+    icon: Optional[str] = "✅"
+    color: Optional[str] = "#3B82F6"
+    frequency_type: str = "daily"
+    weekly_target: int = 7
+    times_per_day: int = 1
+    custom_schedule: Optional[list] = None
+    allow_overflow: bool = False
+
+
+@router.get("/")
+def list_habits(current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)):
+    habits = db.query(models.Habit).filter(
+        models.Habit.user_id == current_user.id,
+        models.Habit.is_active == True,
+        models.Habit.is_archived == False
+    ).order_by(models.Habit.sort_order).all()
+
+    return [{
+        "id": h.id,
+        "name": h.name,
+        "icon": h.icon,
+        "color": h.color,
+        "frequency_type": h.frequency_type.value,
+        "weekly_target": h.weekly_target,
+        "times_per_day": h.times_per_day,
+        "custom_schedule": h.custom_schedule,
+        "allow_overflow": h.allow_overflow,
+        "weekly_total": h.get_weekly_target_total(),
+        "is_active": h.is_active,
+    } for h in habits]
+
+
+@router.get("/week")
+def get_habits_week(year: int = Query(None), week: int = Query(None), current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)):
+    if year is None or week is None:
+        today = date.today()
+        year, week, _ = today.isocalendar()
+
+    from datetime import datetime as dt
+    week_start = dt.strptime(f'{year}-W{week}-1', '%G-W%V-%u').date()
+    week_dates = [week_start + timedelta(days=i) for i in range(7)]
+
+    habits = db.query(models.Habit).filter(
+        models.Habit.user_id == current_user.id,
+        models.Habit.is_active == True,
+        models.Habit.is_archived == False
+    ).order_by(models.Habit.sort_order).all()
+
+    result = []
+    for habit in habits:
+        logs = db.query(models.HabitLog).filter(
+            models.HabitLog.habit_id == habit.id,
+            models.HabitLog.date >= week_dates[0],
+            models.HabitLog.date <= week_dates[6]
+        ).all()
+
+        week_status = []
+        total_actual = 0
+        for d in week_dates:
+            target = habit.get_target_for_date(d)
+            daily_target = habit.times_per_day
+            log = next((l for l in logs if l.date == d), None)
+            actual = log.count if log else 0
+            total_actual += actual
+
+            week_status.append({
+                "date": d.isoformat(),
+                "weekday": d.weekday(),
+                "target": daily_target,
+                "actual": actual,
+                "completed": (actual >= daily_target) if target > 0 else False,
+            })
+
+        weekly_target = habit.get_weekly_target_total()
+        if habit.frequency_type == HabitFrequency.FLEXIBLE:
+            # 灵活模式：完成次数 / 目标次数，超过100%显示超额
+            raw_rate = round((total_actual / weekly_target * 100) if weekly_target > 0 else 0)
+            weekly_rate = min(raw_rate, 100)  # 显示最多100%
+        else:
+            # 固定模式：完成天数 / 计划天数
+            # 当天需要实际完成次数 >= 目标次数才算完成一天
+            completed_days = sum(1 for s in week_status if s["completed"])
+            total_scheduled_days = sum(1 for s in week_status if s["target"] > 0)
+            weekly_rate = round((completed_days / total_scheduled_days * 100) if total_scheduled_days > 0 else 100)
+
+        # 计算是否超额（仅灵活模式）
+        is_overflow = (habit.frequency_type == HabitFrequency.FLEXIBLE and
+                       total_actual > weekly_target)
+
+        result.append({
+            "habit": {
+                "id": habit.id,
+                "name": habit.name,
+                "icon": habit.icon,
+                "color": habit.color,
+                "frequency_type": habit.frequency_type.value,
+                "weekly_target": habit.weekly_target,
+                "times_per_day": habit.times_per_day,
+                "custom_schedule": habit.custom_schedule,
+                "weekly_total": weekly_target,
+                "allow_overflow": habit.allow_overflow,
+            },
+            "week_status": week_status,
+            "weekly_rate": weekly_rate,
+            "total_actual": total_actual,
+            "is_perfect": weekly_rate == 100,
+            "is_overflow": is_overflow
+        })
+
+    return {
+        "year": year,
+        "week": week,
+        "week_dates": [d.isoformat() for d in week_dates],
+        "habits": result
+    }
+
+
+@router.post("/toggle")
+def toggle_habit(data: HabitToggleRequest, current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)):
+    """习惯打卡/取消打卡"""
+    habit = db.query(models.Habit).filter(
+        models.Habit.user_id == current_user.id,
+        models.Habit.id == data.habit_id
+    ).first()
+    if not habit:
+        raise HTTPException(status_code=404, detail="习惯不存在")
+
+    toggle_date = date.fromisoformat(data.date)
+
+    # 查找现有记录
+    log = db.query(models.HabitLog).filter(
+        models.HabitLog.habit_id == data.habit_id,
+        models.HabitLog.date == toggle_date
+    ).first()
+
+    target = habit.times_per_day
+
+    if data.count is not None:
+        # 直接设置次数
+        new_count = data.count
+    else:
+        # 智能 toggle：当前次数 >= 目标则取消，否则 +1
+        current = log.count if log else 0
+        if current >= target:
+            new_count = 0
+        else:
+            new_count = current + 1
+
+    if log:
+        log.count = new_count
+    else:
+        log = models.HabitLog(
+            habit_id=data.habit_id,
+            user_id=habit.user_id,
+            date=toggle_date,
+            count=new_count
+        )
+        db.add(log)
+
+    db.commit()
+    return {"success": True, "count": new_count, "target": target, "completed": new_count >= target}
+
+
+@router.post("/")
+def create_habit_api(habit: HabitCreateRequest, current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)):
+    """创建习惯"""
+    freq_map = {
+        "daily": HabitFrequency.DAILY,
+        "weekdays": HabitFrequency.WEEKDAYS,
+        "weekends": HabitFrequency.WEEKENDS,
+        "custom": HabitFrequency.CUSTOM,
+        "flexible": HabitFrequency.FLEXIBLE,
+    }
+
     db_habit = models.Habit(
         user_id=current_user.id,
-        **habit_in.model_dump()
+        name=habit.name,
+        icon=habit.icon,
+        color=habit.color,
+        frequency_type=freq_map.get(habit.frequency_type, HabitFrequency.DAILY),
+        weekly_target=habit.weekly_target,
+        times_per_day=habit.times_per_day,
+        custom_schedule=habit.custom_schedule,
+        allow_overflow=habit.allow_overflow,
+        is_active=True,
+        is_archived=False,
+        sort_order=0
     )
     db.add(db_habit)
     db.commit()
     db.refresh(db_habit)
-    return db_habit
+    return {"id": db_habit.id, "name": db_habit.name}
 
 
-@router.get("/{habit_id}", response_model=schemas.Habit)
-def get_habit(
+@router.put("/{habit_id}")
+def update_habit_api(
     habit_id: int,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user)
-):
-    """获取习惯详情"""
-    habit = db.query(models.Habit).filter(
-        models.Habit.id == habit_id,
-        models.Habit.user_id == current_user.id
-    ).first()
-    
-    if not habit:
-        raise HTTPException(status_code=404, detail="习惯不存在")
-    
-    return habit
-
-
-@router.put("/{habit_id}", response_model=schemas.Habit)
-def update_habit(
-    habit_id: int,
-    habit_in: schemas.HabitUpdate,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user)
+    habit: HabitCreateRequest,
+    current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)
 ):
     """更新习惯"""
-    habit = db.query(models.Habit).filter(
+    h = db.query(models.Habit).filter(
         models.Habit.id == habit_id,
         models.Habit.user_id == current_user.id
     ).first()
-    
-    if not habit:
+    if not h:
         raise HTTPException(status_code=404, detail="习惯不存在")
-    
-    for field, value in habit_in.model_dump(exclude_unset=True).items():
-        setattr(habit, field, value)
-    
+
+    freq_map = {
+        "daily": HabitFrequency.DAILY,
+        "weekdays": HabitFrequency.WEEKDAYS,
+        "weekends": HabitFrequency.WEEKENDS,
+        "custom": HabitFrequency.CUSTOM,
+        "flexible": HabitFrequency.FLEXIBLE,
+    }
+
+    h.name = habit.name
+    h.icon = habit.icon
+    h.color = habit.color
+    h.frequency_type = freq_map.get(habit.frequency_type, HabitFrequency.DAILY)
+    h.weekly_target = habit.weekly_target
+    h.times_per_day = habit.times_per_day
+    h.custom_schedule = habit.custom_schedule
+    h.allow_overflow = habit.allow_overflow
+
     db.commit()
-    db.refresh(habit)
-    return habit
+    db.refresh(h)
+    return {"id": h.id, "name": h.name}
 
 
 @router.delete("/{habit_id}")
-def delete_habit(
-    habit_id: int,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user)
-):
+def delete_habit_api(habit_id: int, current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)):
     """删除习惯"""
-    habit = db.query(models.Habit).filter(
+    h = db.query(models.Habit).filter(
         models.Habit.id == habit_id,
         models.Habit.user_id == current_user.id
     ).first()
-    
-    if not habit:
+    if not h:
         raise HTTPException(status_code=404, detail="习惯不存在")
-    
-    db.delete(habit)
+
+    db.delete(h)
     db.commit()
-    
     return {"message": "习惯已删除"}
-
-
-# ========== 打卡相关 API ==========
-
-@router.get("/today/check", response_model=List[dict])
-def get_today_check_status(
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user)
-):
-    """
-    获取今日所有习惯的打卡状态
-    
-    返回每个习惯的今日打卡次数
-    """
-    today = date.today()
-    
-    habits = db.query(models.Habit).filter(
-        models.Habit.user_id == current_user.id,
-        models.Habit.is_active == True
-    ).all()
-    
-    result = []
-    for habit in habits:
-        log = db.query(models.HabitLog).filter(
-            models.HabitLog.habit_id == habit.id,
-            models.HabitLog.date == today
-        ).first()
-        
-        result.append({
-            "habit": schemas.Habit.model_validate(habit),
-            "today_count": log.count if log else 0,
-            "is_completed_today": (log.count >= habit.target_times) if log else False
-        })
-    
-    return result
-
-
-@router.post("/{habit_id}/check", response_model=schemas.HabitLog)
-def check_in_habit(
-    habit_id: int,
-    note: Optional[str] = None,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user)
-):
-    """
-    习惯打卡
-    
-    如果今天已经打卡，则增加计数
-    """
-    today = date.today()
-    
-    # 验证习惯存在
-    habit = db.query(models.Habit).filter(
-        models.Habit.id == habit_id,
-        models.Habit.user_id == current_user.id
-    ).first()
-    
-    if not habit:
-        raise HTTPException(status_code=404, detail="习惯不存在")
-    
-    # 查找今日记录
-    log = db.query(models.HabitLog).filter(
-        models.HabitLog.habit_id == habit_id,
-        models.HabitLog.date == today
-    ).first()
-    
-    if log:
-        # 已存在则增加计数
-        log.count += 1
-        if note:
-            log.note = note
-    else:
-        # 创建新记录
-        log = models.HabitLog(
-            habit_id=habit_id,
-            user_id=current_user.id,
-            date=today,
-            count=1,
-            note=note
-        )
-        db.add(log)
-    
-    db.commit()
-    db.refresh(log)
-    return log
-
-
-@router.get("/{habit_id}/stats", response_model=dict)
-def get_habit_stats(
-    habit_id: int,
-    days: int = 30,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user)
-):
-    """
-    获取习惯统计数据
-    
-    返回：
-    - 最近 N 天的打卡记录
-    - 连续打卡天数
-    - 总打卡次数
-    """
-    habit = db.query(models.Habit).filter(
-        models.Habit.id == habit_id,
-        models.Habit.user_id == current_user.id
-    ).first()
-    
-    if not habit:
-        raise HTTPException(status_code=404, detail="习惯不存在")
-    
-    # 获取最近 N 天的记录
-    start_date = date.today() - timedelta(days=days)
-    logs = db.query(models.HabitLog).filter(
-        models.HabitLog.habit_id == habit_id,
-        models.HabitLog.date >= start_date
-    ).order_by(models.HabitLog.date.desc()).all()
-    
-    # 计算总打卡次数
-    total_checkins = sum(log.count for log in logs)
-    
-    # 计算连续打卡天数
-    current_streak = 0
-    check_date = date.today()
-    
-    # 如果今天还没打卡，从昨天开始算
-    today_log = next((log for log in logs if log.date == date.today()), None)
-    if not today_log or today_log.count < habit.target_times:
-        check_date = date.today() - timedelta(days=1)
-    
-    # 倒推计算连续天数
-    while True:
-        log = next((l for l in logs if l.date == check_date), None)
-        if log and log.count >= habit.target_times:
-            current_streak += 1
-            check_date -= timedelta(days=1)
-        else:
-            break
-    
-    return {
-        "habit": schemas.Habit.model_validate(habit),
-        "total_checkins": total_checkins,
-        "current_streak": current_streak,
-        "recent_logs": [schemas.HabitLog.model_validate(log) for log in logs[:7]]
-    }
