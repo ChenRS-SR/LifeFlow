@@ -5,7 +5,7 @@
 """
 from typing import Any, List, Optional, Dict
 from datetime import date, timedelta
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, File, UploadFile
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 
@@ -15,6 +15,7 @@ from app.models.task import TaskStatus
 from app.models.goal import GoalStatus, GoalPeriod
 from app.models.project import ProjectStatus
 from app.models.habit import HabitLog
+from app.services.vision_service import vision_service, VisionServiceError
 
 router = APIRouter(prefix="/reviews", tags=["复盘"])
 
@@ -361,11 +362,71 @@ def delete_review(
         models.Review.id == review_id,
         models.Review.user_id == current_user.id
     ).first()
-    
+
     if not review:
         raise HTTPException(status_code=404, detail="复盘不存在")
-    
+
     db.delete(review)
     db.commit()
-    
+
     return {"message": "复盘已删除"}
+
+
+@router.post("/{review_id}/recognize-image")
+def recognize_review_image(
+    review_id: int,
+    type: str = Query(..., description="识别类型: diet 或 workout"),
+    image: UploadFile = File(..., description="要识别的图片"),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user)
+):
+    """
+    识别复盘关联的图片（饮食/健身）
+
+    图片仅在内存中处理，识别完成后立即丢弃；
+    只把识别出的结构化文本数据保存到 review.diet_record 或 review.workout_record。
+    """
+    if type not in ("diet", "workout"):
+        raise HTTPException(status_code=400, detail="type 必须是 diet 或 workout")
+
+    review = db.query(models.Review).filter(
+        models.Review.id == review_id,
+        models.Review.user_id == current_user.id
+    ).first()
+
+    if not review:
+        raise HTTPException(status_code=404, detail="复盘不存在")
+
+    # 校验图片类型
+    allowed_types = {"image/jpeg", "image/png", "image/webp", "image/jpg"}
+    content_type = image.content_type or ""
+    if content_type.lower() not in allowed_types:
+        raise HTTPException(status_code=400, detail="只支持 jpg/png/webp 图片")
+
+    try:
+        image_bytes = image.file.read()
+        if len(image_bytes) == 0:
+            raise HTTPException(status_code=400, detail="图片文件为空")
+
+        record = vision_service.recognize(
+            image_bytes=image_bytes,
+            record_type=type,
+            image_mime=content_type,
+        )
+    except VisionServiceError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"图片识别失败: {e}") from e
+    finally:
+        image.file.close()
+
+    # 保存识别结果到 review，不保存原图
+    if type == "diet":
+        review.diet_record = record
+    else:
+        review.workout_record = record
+
+    db.commit()
+    db.refresh(review)
+
+    return {"type": type, "record": record}

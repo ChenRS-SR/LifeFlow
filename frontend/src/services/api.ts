@@ -305,5 +305,17 @@ export const reviewsAPI = {
   delete: (id: number) => apiClient.delete(`/api/reviews/${id}`),
 };
 
+// ==================== 图片识别 API ====================
+export const visionAPI = {
+  recognize: (reviewId: number, type: 'diet' | 'workout', imageFile: File) => {
+    const formData = new FormData();
+    formData.append('image', imageFile);
+    formData.append('type', type);
+    return apiClient.post(`/api/reviews/${reviewId}/recognize-image`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+};
+
 // 导出默认实例
 export default apiClient;

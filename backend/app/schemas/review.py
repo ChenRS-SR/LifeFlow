@@ -40,6 +40,10 @@ class ReviewBase(BaseModel):
     # 多维度打分
     dimensions: Optional[dict] = None  # { "外型": 5, "社交": 4, ... }
 
+    # AI 识别后的饮食/健身记录（仅保存结构化文本，不保存原图）
+    diet_record: Optional[dict] = None     # 薄荷健康饮食记录识别结果
+    workout_record: Optional[dict] = None  # 训记训练记录识别结果
+
 
 class ReviewCreate(ReviewBase):
     pass

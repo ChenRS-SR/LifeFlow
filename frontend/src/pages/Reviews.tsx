@@ -1,11 +1,12 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
-import { 
-  BookOpen, Calendar, Save, ChevronLeft, ChevronRight, 
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import {
+  BookOpen, Calendar, Save, ChevronLeft, ChevronRight,
   TrendingUp, Target, CheckCircle2, Folder, Plus, X, Clock,
   Smile, FileText, CalendarDays, Zap, Import, Search,
-  Download, FileText as FileTextIcon, Image as ImageIcon
+  Download, FileText as FileTextIcon, Image as ImageIcon,
+  Camera, Utensils, Dumbbell, Loader2
 } from 'lucide-react';
-import { reviewsAPI, taskAPI, habitAPI } from '../services/api';
+import { reviewsAPI, taskAPI, habitAPI, visionAPI } from '../services/api';
 import type { Review, TimelineItem, Task, Habit } from '../types';
 import { format, startOfWeek, addDays, getWeek, getYear, parseISO, subDays, isSameDay } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
@@ -72,6 +73,8 @@ interface DailyFormData {
   notes: string;
   tomorrow: string;
   mood: number;
+  diet_record?: Record<string, any> | null;
+  workout_record?: Record<string, any> | null;
 }
 
 interface ReviewFormData {
@@ -89,6 +92,198 @@ interface ReviewFormData {
   interpretive_summary?: string;
   decisional_summary?: string;
   dimensions?: Record<string, number>;
+}
+
+// ============ 饮食/健身记录上传组件 ============
+function RecordUploader({
+  type,
+  record,
+  recognizing,
+  onRecognize,
+  icon: Icon,
+  title,
+  placeholder
+}: {
+  type: 'diet' | 'workout';
+  record: Record<string, any> | null | undefined;
+  recognizing: boolean;
+  onRecognize: (file: File) => void;
+  icon: React.ElementType;
+  title: string;
+  placeholder: string;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    onRecognize(file);
+    // 清空 input 值，允许重复选择同一张图片
+    e.target.value = '';
+  };
+
+  return (
+    <div className="bg-gray-50 rounded-lg p-4">
+      <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
+        <Icon size={16} className="text-primary-600" />
+        {title}
+      </h4>
+
+      {!record && (
+        <div
+          onClick={() => inputRef.current?.click()}
+          className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-primary-500 hover:bg-primary-50 transition-colors cursor-pointer"
+        >
+          <input
+            ref={inputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleFileChange}
+          />
+          {recognizing ? (
+            <div className="flex items-center justify-center gap-2 text-primary-600">
+              <Loader2 size={18} className="animate-spin" />
+              <span className="text-sm">AI 识别中...</span>
+            </div>
+          ) : (
+            <>
+              <Camera size={24} className="mx-auto text-gray-400 mb-2" />
+              <p className="text-sm text-gray-500">{placeholder}</p>
+              <p className="text-xs text-gray-400 mt-1">原图不保存，仅保留识别结果</p>
+            </>
+          )}
+        </div>
+      )}
+
+      {record && (
+        <RecordDisplay
+          type={type}
+          record={record}
+          recognizing={recognizing}
+          onReRecognize={() => inputRef.current?.click()}
+        />
+      )}
+    </div>
+  );
+}
+
+// ============ 识别结果展示组件 ============
+function RecordDisplay({
+  type,
+  record,
+  recognizing,
+  onReRecognize
+}: {
+  type: 'diet' | 'workout';
+  record: Record<string, any>;
+  recognizing: boolean;
+  onReRecognize: () => void;
+}) {
+  return (
+    <div className="space-y-3">
+      {/* 摘要信息 */}
+      <div className="grid grid-cols-2 gap-2">
+        {type === 'diet' && (
+          <>
+            <div className="bg-white rounded p-2 text-center">
+              <div className="text-lg font-bold text-orange-600">{record.total_calories ?? '-'}</div>
+              <div className="text-xs text-gray-500">总热量 (kcal)</div>
+            </div>
+            <div className="bg-white rounded p-2 text-center">
+              <div className="text-lg font-bold text-blue-600">
+                {record.total_protein ?? '-'}/{record.total_carbs ?? '-'}/{record.total_fat ?? '-'}
+              </div>
+              <div className="text-xs text-gray-500">蛋/碳/脂 (g)</div>
+            </div>
+          </>
+        )}
+        {type === 'workout' && (
+          <>
+            <div className="bg-white rounded p-2 text-center">
+              <div className="text-lg font-bold text-red-600">{record.duration_minutes ?? '-'}</div>
+              <div className="text-xs text-gray-500">时长 (min)</div>
+            </div>
+            <div className="bg-white rounded p-2 text-center">
+              <div className="text-lg font-bold text-purple-600">
+                {record.exercises?.length ?? '-'}
+              </div>
+              <div className="text-xs text-gray-500">动作数</div>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* 详细列表 */}
+      {type === 'diet' && record.meals && record.meals.length > 0 && (
+        <div className="bg-white rounded p-3 text-sm space-y-2">
+          {record.meals.map((meal: any, idx: number) => (
+            <div key={idx} className="border-b border-gray-100 last:border-0 pb-2 last:pb-0">
+              <div className="flex justify-between font-medium text-gray-800">
+                <span>{meal.name}</span>
+                <span className="text-orange-600">{meal.calories ?? '-'} kcal</span>
+              </div>
+              {meal.foods && (
+                <ul className="mt-1 text-xs text-gray-500 space-y-0.5">
+                  {meal.foods.map((food: any, fidx: number) => (
+                    <li key={fidx}>
+                      {food.name} {food.weight ? `(${food.weight})` : ''} {food.calories ? `- ${food.calories} kcal` : ''}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {type === 'workout' && record.exercises && record.exercises.length > 0 && (
+        <div className="bg-white rounded p-3 text-sm space-y-2">
+          {record.exercises.map((exercise: any, idx: number) => (
+            <div key={idx} className="border-b border-gray-100 last:border-0 pb-2 last:pb-0">
+              <div className="font-medium text-gray-800">{exercise.name}</div>
+              {exercise.sets && (
+                <div className="mt-1 text-xs text-gray-500">
+                  {exercise.sets.map((set: any, sidx: number) => (
+                    <span key={sidx} className="inline-block mr-2 bg-gray-100 rounded px-1.5 py-0.5">
+                      {set.weight} × {set.reps}{set.rpe ? ` @RPE${set.rpe}` : ''}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* 原始文本折叠 */}
+      {record.raw_text && (
+        <details className="text-xs text-gray-500">
+          <summary className="cursor-pointer hover:text-gray-700">识别原始文本</summary>
+          <pre className="mt-2 p-2 bg-white rounded whitespace-pre-wrap">{record.raw_text}</pre>
+        </details>
+      )}
+
+      {/* 重新识别按钮 */}
+      <button
+        onClick={onReRecognize}
+        disabled={recognizing}
+        className="w-full py-2 text-sm text-primary-600 border border-primary-200 rounded-lg hover:bg-primary-50 disabled:opacity-50 flex items-center justify-center gap-1"
+      >
+        {recognizing ? (
+          <>
+            <Loader2 size={16} className="animate-spin" />
+            识别中...
+          </>
+        ) : (
+          <>
+            <Camera size={16} />
+            重新识别
+          </>
+        )}
+      </button>
+    </div>
+  );
 }
 
 // ============ Toast 组件 ============
@@ -881,7 +1076,9 @@ export default function Reviews() {
     timeline: [],
     notes: '',
     tomorrow: '',
-    mood: 5
+    mood: 5,
+    diet_record: null,
+    workout_record: null
   });
   
   // 今日数据统计
@@ -889,6 +1086,12 @@ export default function Reviews() {
     completedTasks: 0,
     habitCheckins: 0
   });
+
+  // 图片识别状态
+  const [recognizing, setRecognizing] = useState<{
+    diet: boolean;
+    workout: boolean;
+  }>({ diet: false, workout: false });
   
   // 其他复盘表单（兼容旧版）
   const [formData, setFormData] = useState<ReviewFormData>({
@@ -955,7 +1158,9 @@ export default function Reviews() {
             timeline: reviewData.timeline || [],
             notes: reviewData.notes || '',
             tomorrow: reviewData.tomorrow || '',
-            mood: reviewData.mood || 5
+            mood: reviewData.mood || 5,
+            diet_record: reviewData.diet_record || null,
+            workout_record: reviewData.workout_record || null
           });
         } else {
           // 其他复盘使用旧表单
@@ -975,7 +1180,7 @@ export default function Reviews() {
       } else {
         // 重置表单
         if (activeTab === 'daily') {
-          setDailyForm({ timeline: [], notes: '', tomorrow: '', mood: 5 });
+          setDailyForm({ timeline: [], notes: '', tomorrow: '', mood: 5, diet_record: null, workout_record: null });
         } else {
           setFormData({
             highlights: '', challenges: '', learnings: '', next_steps: '', gratitude: '', mood: 5,
@@ -1040,6 +1245,41 @@ export default function Reviews() {
     loadTodayStats();
   }, [activeTab, currentDate]);
 
+  // 处理图片识别（饮食/健身）
+  const handleRecognize = async (type: 'diet' | 'workout', file: File) => {
+    if (!existingReview?.id) {
+      showToast('请先保存日复盘，再上传图片识别', 'error');
+      return;
+    }
+
+    setRecognizing(prev => ({ ...prev, [type]: true }));
+    try {
+      const res = await visionAPI.recognize(existingReview.id, type, file);
+      const record = res.data?.record;
+      if (record) {
+        setDailyForm(prev => ({
+          ...prev,
+          [type === 'diet' ? 'diet_record' : 'workout_record']: record
+        }));
+        showToast(`${type === 'diet' ? '饮食' : '健身'}记录识别完成`, 'success');
+      }
+    } catch (error: any) {
+      console.error('图片识别失败:', error);
+      let msg = '识别失败，请检查网络或 API Key 配置';
+      if (error.response?.data) {
+        const data = error.response.data;
+        if (typeof data === 'string') {
+          msg = data;
+        } else if (data.detail) {
+          msg = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail);
+        }
+      }
+      showToast(msg, 'error');
+    } finally {
+      setRecognizing(prev => ({ ...prev, [type]: false }));
+    }
+  };
+
   // 保存复盘
   const handleSave = async () => {
     setSaving(true);
@@ -1056,13 +1296,15 @@ export default function Reviews() {
           ref_id: item.ref_id || null
         }));
         
-        data = { 
-          period: activeTab, 
-          ...params, 
+        data = {
+          period: activeTab,
+          ...params,
           timeline: cleanTimeline,
           notes: dailyForm.notes,
           tomorrow: dailyForm.tomorrow,
           mood: dailyForm.mood,
+          diet_record: dailyForm.diet_record,
+          workout_record: dailyForm.workout_record,
           highlights: dailyForm.notes, // 兼容旧字段
           next_steps: dailyForm.tomorrow
         };
@@ -1305,6 +1547,28 @@ export default function Reviews() {
               <div className="text-xs text-gray-500">习惯打卡</div>
             </div>
           </div>
+        </div>
+
+        {/* 饮食与健身记录上传 */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <RecordUploader
+            type="diet"
+            title="🍽️ 饮食记录"
+            placeholder="上传薄荷健康截图"
+            icon={Utensils}
+            record={dailyForm.diet_record}
+            recognizing={recognizing.diet}
+            onRecognize={(file) => handleRecognize('diet', file)}
+          />
+          <RecordUploader
+            type="workout"
+            title="💪 健身记录"
+            placeholder="上传训记截图"
+            icon={Dumbbell}
+            record={dailyForm.workout_record}
+            recognizing={recognizing.workout}
+            onRecognize={(file) => handleRecognize('workout', file)}
+          />
         </div>
 
         {/* 心情评分 */}

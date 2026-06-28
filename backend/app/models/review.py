@@ -63,6 +63,10 @@ class Review(Base):
     # 多维度打分（月/季度/年度复盘使用）
     dimensions = Column(JSON, nullable=True)  # { "外型": 5, "社交": 4, ... }
 
+    # AI 识别后的饮食/健身记录（仅保存结构化文本，不保存原图）
+    diet_record = Column(JSON, nullable=True)     # 薄荷健康饮食记录识别结果
+    workout_record = Column(JSON, nullable=True)  # 训记训练记录识别结果
+
     # 时间戳
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
