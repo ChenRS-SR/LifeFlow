@@ -2,7 +2,7 @@
 复盘相关 Pydantic Schema
 """
 from typing import Optional, List, Any
-from datetime import datetime
+from datetime import datetime, date as date_type
 from pydantic import BaseModel, ConfigDict, field_serializer
 
 
@@ -59,6 +59,7 @@ class Review(ReviewBase):
 
     id: int
     user_id: int
+    date: Optional[date_type] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
