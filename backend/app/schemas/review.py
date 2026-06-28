@@ -3,7 +3,7 @@
 """
 from typing import Optional, List, Any
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_serializer
 
 
 class ReviewBase(BaseModel):
@@ -61,3 +61,11 @@ class Review(ReviewBase):
     user_id: int
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+    @field_serializer("date")
+    def serialize_date(self, value):
+        if value is None:
+            return None
+        if hasattr(value, "isoformat"):
+            return value.isoformat()
+        return value
