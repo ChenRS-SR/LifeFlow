@@ -296,8 +296,9 @@ class VisionService:
         后处理饮食记录：
         1. 连续同名餐（如两个"晚餐"）把第二个改名为对应加餐
         2. 为缺失名称的食物从 raw_text 推断食物名
-        3. 用每餐食物热量之和修正/补充该餐总热量
-        4. 清洗营养素数值
+        3. 从 raw_text 修正每个食物的 calories 并补全漏识别食物
+        4. 用每餐食物热量之和修正/补充该餐总热量
+        5. 清洗营养素数值
         """
         for key in ["total_calories", "total_protein", "total_carbs", "total_fat"]:
             record[key] = self._to_int(record.get(key))
@@ -333,13 +334,80 @@ class VisionService:
                 cleaned_foods.append({"name": name, "weight": weight, "calories": calories})
             meal["foods"] = cleaned_foods
 
-            # 修正每餐总热量：优先使用食物热量之和（AI 常把首个食物热量错当成餐总热量）
+        # 用 raw_text 修正食物热量并补全漏识别食物
+        if raw:
+            self._fix_food_calories_from_raw(merged_meals, raw)
+            self._add_missing_foods_from_raw(merged_meals, raw)
+
+        # 修正每餐总热量：优先使用食物热量之和
+        for meal in merged_meals:
             meal_cal = self._to_int(meal.get("calories"))
-            food_sum = self._sum_food_calories(cleaned_foods)
+            food_sum = self._sum_food_calories(meal.get("foods", []))
             meal["calories"] = food_sum if food_sum > 0 else meal_cal
 
         record["meals"] = merged_meals
         return record
+
+    def _fix_food_calories_from_raw(self, meals: list, raw: str) -> None:
+        """根据 raw_text 修正每个已有食物的热量（AI 常把餐总热量错填为食物热量）"""
+        lines = [l.strip() for l in raw.splitlines() if l.strip()]
+        for meal in meals:
+            for f in meal.get("foods", []):
+                if not isinstance(f, dict):
+                    continue
+                name = f.get("name", "")
+                if not name:
+                    continue
+                for i, line in enumerate(lines):
+                    if name not in line:
+                        continue
+                    # 向后找第一个 "数字 + 千卡"
+                    for j in range(i + 1, min(len(lines), i + 5)):
+                        m = re.search(r"(\d+)\s*千卡", lines[j])
+                        if m:
+                            f["calories"] = int(m.group(1))
+                            break
+                    break
+
+    def _add_missing_foods_from_raw(self, meals: list, raw: str) -> None:
+        """把 raw_text 中已有食物未覆盖的热量条目补全为食物，附加到最近的餐"""
+        if not meals:
+            return
+        used_cals = set()
+        for meal in meals:
+            for f in meal.get("foods", []):
+                if isinstance(f, dict):
+                    fc = self._to_int(f.get("calories"))
+                    if fc is not None:
+                        used_cals.add(fc)
+
+        lines = [l.strip() for l in raw.splitlines() if l.strip()]
+        for i, line in enumerate(lines):
+            m = re.search(r"(\d+)\s*千卡", line)
+            if not m:
+                continue
+            cal = int(m.group(1))
+            if cal in used_cals:
+                continue
+            # 跳过建议范围、预算、摄入消耗等 summary 数字
+            if any(kw in line for kw in ("建议", "预算", "摄入", "消耗", "还可以吃")):
+                continue
+            # 往前找食物名和重量
+            name = ""
+            weight = ""
+            for j in range(i - 1, -1, -1):
+                candidate = lines[j]
+                if self._looks_like_food_name(candidate):
+                    name = candidate
+                    # 在食物名和热量行之间找重量
+                    for k in range(j + 1, i):
+                        if re.search(r"\d+(\.\d+)?\s*(克|毫升|两|份|套)", lines[k]):
+                            weight = lines[k]
+                            break
+                    break
+            if name:
+                meals[-1]["foods"].append({"name": name, "weight": weight, "calories": cal})
+                used_cals.add(cal)
 
     def _infer_food_name(self, raw: str, weight: str, calories: Optional[int]) -> str:
         """从 raw_text 中为缺失名称的食物推断食物名"""
