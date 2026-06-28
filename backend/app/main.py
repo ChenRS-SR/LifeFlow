@@ -776,8 +776,8 @@ def get_habits_week(year: int = Query(None), week: int = Query(None), current_us
             weekly_rate = min(raw_rate, 100)  # 显示最多100%
         else:
             # 固定模式：完成天数 / 计划天数
-            # 只要当天打卡了（actual > 0），就算完成了一天
-            completed_days = sum(1 for s in week_status if s["actual"] > 0 and s["target"] > 0)
+            # 当天需要实际完成次数 >= 目标次数才算完成一天
+            completed_days = sum(1 for s in week_status if s["completed"])
             total_scheduled_days = sum(1 for s in week_status if s["target"] > 0)
             weekly_rate = round((completed_days / total_scheduled_days * 100) if total_scheduled_days > 0 else 100)
         

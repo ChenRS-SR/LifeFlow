@@ -310,6 +310,8 @@ export default function Habits() {
                           >
                             {status.completed ? (
                               <Check size={18} />
+                            ) : status.actual > 0 ? (
+                              <span className="text-[10px] font-bold">{status.actual}/{status.target}</span>
                             ) : (
                               <span className="text-xs">+</span>
                             )}
