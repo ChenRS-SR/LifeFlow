@@ -1440,9 +1440,9 @@ export default function Tasks() {
             <span className="text-gray-600">本周任务:</span>
             <span className="ml-2 font-bold text-blue-600">{weekTasks.length}</span>
           </div>
-          <div className="px-4 py-2 bg-red-50 rounded-lg">
+          <div className="px-4 py-2 bg-red-50 rounded-lg" title="仅显示截止日期在本周开始之前的逾期任务">
             <span className="text-gray-600">逾期:</span>
-            <span className="ml-2 font-bold text-red-600">{overdueTasks.filter(t => t.status !== 'completed').length}</span>
+            <span className="ml-2 font-bold text-red-600">{overdueTasks.length}</span>
           </div>
           <div className="px-4 py-2 bg-emerald-50 rounded-lg">
             <span className="text-gray-600">已完成:</span>
@@ -1454,9 +1454,10 @@ export default function Tasks() {
         <div className="grid grid-cols-1 md:grid-cols-8 gap-3">
           {/* 逾期任务列 */}
           <div className="min-h-[200px]">
-            <div className="text-center py-2 rounded-t-lg bg-red-100">
+            <div className="text-center py-2 rounded-t-lg bg-red-100" title="仅显示截止日期在本周开始之前的逾期任务">
               <p className="text-xs text-red-600 font-medium">逾期</p>
               <p className="text-xs text-red-500 mt-0.5">{overdueTasks.length}个</p>
+              <p className="text-[10px] text-red-400 mt-0.5">本周前</p>
             </div>
             <div className="p-2 space-y-2 border border-t-0 border-red-200 rounded-b-lg min-h-[200px] bg-red-50/30">
               {overdueTasks.length === 0 ? (

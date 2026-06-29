@@ -232,7 +232,7 @@ export const reviewAPI = {
     return res.data;
   },
   
-  getPeriodSummary: async (period: string, params: { year: number; month?: number; week?: number; quarter?: number }) => {
+  getPeriodSummary: async (period: string, params: { year: number; month?: number; week?: number; quarter?: number; date?: string }) => {
     const res = await apiClient.get('/api/reviews/period/summary', { params: { period, ...params } });
     return res.data;
   },
@@ -262,16 +262,11 @@ export const reviewsAPI = {
     return res.data;
   },
   
-  getPeriodSummary: async (period: string, params: { year: number; month?: number; week?: number; quarter?: number }) => {
+  getPeriodSummary: async (period: string, params: { year: number; month?: number; week?: number; quarter?: number; date?: string }) => {
     const res = await apiClient.get('/api/reviews/period/summary', { params: { period, ...params } });
     return res.data;
   },
-  
-  getTodayDaily: async () => {
-    const res = await apiClient.get('/api/reviews/today');
-    return res.data;
-  },
-  
+
   create: (data: {
     period: string;
     year: number;
