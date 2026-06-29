@@ -31,28 +31,17 @@ def get_current_user(
     db: Session = Depends(get_db)
 ) -> models.User:
     """
-    通过 Token 获取当前登录用户
-    支持 JWT Token 和简单 Token (token_1, token_2 等)
+    通过 JWT Token 获取当前登录用户
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="无效的认证信息",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    
+
     token = credentials.credentials
-    
-    # 支持简单 token (如 token_1, token_2)
-    if token.startswith("token_"):
-        try:
-            user_id = int(token.split("_")[1])
-            user = db.query(models.User).filter(models.User.id == user_id).first()
-            if user:
-                return user
-        except (ValueError, IndexError):
-            pass
-    
-    # 尝试 JWT Token
+
+    # 只接受合法 JWT Token，不再支持 token_1 / token_2 等简单绕过
     try:
         payload = jwt.decode(
             token,

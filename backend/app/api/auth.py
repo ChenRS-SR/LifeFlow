@@ -39,13 +39,19 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
 @router.post("/register")
 def register(user_in: schemas.UserCreate, db: Session = Depends(get_db)):
     """用户注册"""
+    if not settings.ALLOW_REGISTRATION:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="当前已关闭开放注册"
+        )
+
     print(f"注册请求: {user_in.username}")
-    
+
     # 检查用户是否存在
     existing = db.query(models.User).filter(models.User.username == user_in.username).first()
     if existing:
         raise HTTPException(status_code=400, detail="用户名已存在")
-    
+
     # 创建用户
     user = models.User(
         username=user_in.username,
@@ -55,7 +61,7 @@ def register(user_in: schemas.UserCreate, db: Session = Depends(get_db)):
     db.add(user)
     db.commit()
     db.refresh(user)
-    
+
     print(f"注册成功: {user.id}")
     return {
         "id": user.id,

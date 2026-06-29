@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import date, datetime, timedelta
 import os
+import secrets
 
 from app.db.database import SessionLocal, engine, Base
 from app import models
@@ -13,6 +14,9 @@ from app.models.task import TaskType, TaskStatus, TaskPriority
 from app.api import auth as auth_router, dashboard as dashboard_router, reviews as reviews_router
 from app.api import projects as projects_router, tasks as tasks_router, goals as goals_router, habits as habits_router
 from app.api.auth import get_password_hash, verify_password
+from app.core.config import get_settings
+
+settings = get_settings()
 
 # HabitFrequency 值映射
 HABIT_CUSTOM = HabitFrequency.CUSTOM  # 固定日期（自定义）
@@ -54,27 +58,36 @@ def health():
 
 # ==================== 初始化 ====================
 def init_default_data():
-    """初始化默认数据"""
+    """初始化默认数据：仅开发/测试环境执行，生产环境跳过"""
+    if settings.ENVIRONMENT in ("production", "prod"):
+        print("[INIT] 生产环境跳过默认数据初始化")
+        return
+
     db = SessionLocal()
     try:
-        # 创建默认用户
+        # 创建默认用户（仅当不存在时），开发环境使用随机密码
         user = db.query(models.User).filter(models.User.username == "admin").first()
         if not user:
+            dev_password = secrets.token_urlsafe(16)
             user = models.User(
                 username="admin",
                 email="admin@example.com",
-                hashed_password=get_password_hash("admin123"),
+                hashed_password=get_password_hash(dev_password),
                 is_active=True
             )
             db.add(user)
             db.commit()
             db.refresh(user)
-            print("[INIT] 创建默认用户: admin / admin123")
+            print("[INIT] 创建开发默认用户: admin")
+            print(f"[INIT] 临时密码: {dev_password}")
+            print("[INIT] 请在首次使用后立即修改或改用正式账户")
         elif not user.hashed_password.startswith(("$2a$", "$2b$", "$2y$")):
             # 兼容旧版 SHA256 密码，自动升级为 bcrypt
-            user.hashed_password = get_password_hash("admin123")
+            dev_password = secrets.token_urlsafe(16)
+            user.hashed_password = get_password_hash(dev_password)
             db.commit()
             print("[INIT] 已升级默认用户密码哈希")
+            print(f"[INIT] 新的临时密码: {dev_password}")
 
         # 创建默认习惯（仅在用户没有习惯时创建）
         existing_habits = db.query(models.Habit).filter(models.Habit.user_id == user.id).first()

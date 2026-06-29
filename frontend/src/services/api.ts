@@ -14,7 +14,7 @@ const apiClient = axios.create({
 // 请求拦截器 - 添加认证信息
 apiClient.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token') || 'token_1';
+    const token = localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
