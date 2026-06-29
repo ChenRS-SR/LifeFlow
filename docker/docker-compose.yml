@@ -27,7 +27,9 @@ services:
       - ./data:/app/data
     environment:
       - DATABASE_URL=sqlite:////app/data/lifeflow.db
-      - SECRET_KEY=${SECRET_KEY:-change-this-secret-key-in-production}
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - SECRET_KEY=${SECRET_KEY}
+      - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-false}
       - ACCESS_TOKEN_EXPIRE_MINUTES=10080
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost,http://localhost:3000,http://127.0.0.1:3000}
       - FRONTEND_URL=${FRONTEND_URL:-}
