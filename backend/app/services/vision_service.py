@@ -166,6 +166,7 @@ class VisionService:
         if record_type == "workout":
             structured = self._normalize_workout_record(structured)
             structured = self._extract_summary_from_raw(structured)
+            structured = self._rebuild_workout_exercises_from_raw(structured)
         elif record_type == "diet":
             structured = self._normalize_diet_record(structured)
             structured = self._extract_diet_targets_from_raw(structured)
@@ -274,27 +275,118 @@ class VisionService:
         if not isinstance(raw, str):
             return record
 
-        # 总耗时：例如 "总耗时\n54m"
+        # 总耗时：支持 "54m" / "1h00m" / "1h30m"
         if not record.get("duration_minutes"):
-            m = re.search(r"总耗时\s*(\d+)\s*m?", raw)
-            if not m:
-                m = re.search(r"(\d+)\s*m\s*总耗时", raw)
+            m = re.search(r"(\d+)\s*h\s*(\d+)\s*m", raw)
             if m:
-                record["duration_minutes"] = int(m.group(1))
+                record["duration_minutes"] = int(m.group(1)) * 60 + int(m.group(2))
+            else:
+                m = re.search(r"总耗时\s*(\d+)\s*m?", raw)
+                if not m:
+                    m = re.search(r"(\d+)\s*m\s*总耗时", raw)
+                if m:
+                    record["duration_minutes"] = int(m.group(1))
 
-        # 总重量(kg)：例如 "总重量(kg)\n8215"
+        # 总重量(kg)
         if not record.get("total_weight"):
             m = re.search(r"总重量\s*\(kg\)\s*(\d+)", raw)
             if m:
                 record["total_weight"] = int(m.group(1))
 
-        # 消耗(大卡)：例如 "消耗(大卡)\n201"
+        # 消耗(大卡)
         if not record.get("total_calories"):
             m = re.search(r"消耗\s*\(大卡\)\s*(\d+)", raw)
             if m:
                 record["total_calories"] = int(m.group(1))
 
         return record
+
+    # 需要从 raw_text 中排除的非动作行关键词
+    _WORKOUT_SKIP_KEYWORDS = frozenset([
+        "消耗", "总重量", "总耗时", "大卡", "kg", "m", "天", "周一", "周二", "周三",
+        "周四", "周五", "周六", "周日", "x+", "+0", "我在", "训记", "长按", "扫码",
+        "查看", "记录", "体重管理", "AI算", "薄荷健康"
+    ])
+
+    def _rebuild_workout_exercises_from_raw(self, record: dict) -> dict:
+        """
+        如果 AI 返回的 exercises 结构混乱，尝试从 raw_text 重新解析动作和组数。
+        raw_text 通常比 AI 的 JSON 更准确。
+        """
+        raw = record.get("raw_text", "")
+        if not isinstance(raw, str) or not raw.strip():
+            return record
+
+        lines = [l.strip() for l in raw.splitlines() if l.strip()]
+        exercises = []
+        current = None
+
+        for line in lines:
+            # 如果行包含组数格式，追加到当前动作
+            if self._has_set_format(line):
+                if current is not None:
+                    current["sets"].extend(self._parse_workout_sets(line))
+                continue
+
+            # 否则可能是动作名/summary/部位/日期
+            if self._is_pure_body_part(line):
+                continue
+            if any(kw in line for kw in self._WORKOUT_SKIP_KEYWORDS):
+                continue
+            # 跳过日期行（如 2026-06-15周一）
+            if re.match(r"^\d{4}[-/]\d{1,2}[-/]\d{1,2}", line):
+                continue
+            # 跳过太短的行
+            if len(line) < 2 or len(line) > 30:
+                continue
+
+            # 新动作
+            if current is not None:
+                exercises.append(current)
+            current = {"name": line, "sets": []}
+
+        if current is not None:
+            exercises.append(current)
+
+        # 过滤掉没有组数的动作
+        record["exercises"] = [ex for ex in exercises if ex.get("sets")]
+
+        # 根据动作名重新推断训练部位
+        record["body_parts"] = self._infer_body_parts(record["exercises"])
+        return record
+
+    def _infer_body_parts(self, exercises: list) -> list:
+        """根据动作名称推断主要训练部位"""
+        for ex in exercises:
+            name = ex.get("name", "")
+            if any(k in name for k in ("胸", "卧推", "推胸", "飞鸟", "夹胸")):
+                return ["胸", "三头"]
+            if any(k in name for k in ("背", "划船", "下拉", "引体", "硬拉")):
+                return ["背", "二头"]
+            if any(k in name for k in ("肩", "推举", "侧平举", "前平举")):
+                return ["肩", "三头"]
+            if any(k in name for k in ("腿", "深蹲", "腿举", "弓步", "倒蹬")):
+                return ["腿", "臀"]
+            if any(k in name for k in ("臂", "弯举", "臂屈伸", "牧师")):
+                return ["手臂"]
+            if any(k in name for k in ("腹", "卷腹", "抬腿", "平板")):
+                return ["核心", "腹"]
+        return []
+
+    def _has_set_format(self, line: str) -> bool:
+        """判断一行是否包含训练组数格式（如 60kg×7 或 (22.5+22.5)kg×10）"""
+        return bool(re.search(r"(?:\(\d+(?:\.\d+)?\+\d+(?:\.\d+)?\)|\d+(?:\.\d+)?)kg\s*[×xX*]\s*\d+", line))
+
+    def _parse_workout_sets(self, line: str) -> list:
+        """从一行中提取所有 weight×reps 组"""
+        sets = []
+        # 匹配 (22.5+22.5)kg×10 或 60kg×7
+        pattern = re.compile(r"(\(\d+(?:\.\d+)?\+\d+(?:\.\d+)?\)kg|\d+(?:\.\d+)?kg)\s*[×xX*]\s*(\d+)")
+        for m in pattern.finditer(line):
+            weight = m.group(1)
+            reps = int(m.group(2))
+            sets.append({"weight": weight, "reps": reps, "rpe": None})
+        return sets
 
     # 标准餐名
     _MEAL_NAMES = frozenset(["早餐", "午餐", "晚餐", "加餐", "晚加餐", "早加餐", "午加餐"])
