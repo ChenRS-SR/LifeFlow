@@ -6,7 +6,7 @@ import {
   Download, FileText as FileTextIcon, Image as ImageIcon,
   Camera, Utensils, Dumbbell, Loader2, Edit
 } from 'lucide-react';
-import { reviewsAPI, taskAPI, habitAPI, visionAPI } from '../services/api';
+import { reviewsAPI, taskAPI, habitAPI, visionAPI, xunjiAPI } from '../services/api';
 import type { Review, TimelineItem, Task, Habit } from '../types';
 import { format, startOfWeek, addDays, getWeek, getYear, parseISO, subDays, isSameDay } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
@@ -103,7 +103,8 @@ function RecordUploader({
   onRecordChange,
   icon: Icon,
   title,
-  placeholder
+  placeholder,
+  extraAction
 }: {
   type: 'diet' | 'workout';
   record: Record<string, any> | null | undefined;
@@ -113,6 +114,7 @@ function RecordUploader({
   icon: React.ElementType;
   title: string;
   placeholder: string;
+  extraAction?: React.ReactNode;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -136,6 +138,9 @@ function RecordUploader({
       <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
         <Icon size={16} className="text-primary-600" />
         {title}
+        {record?.source === 'xunji_api' && (
+          <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">来自训记</span>
+        )}
       </h4>
 
       {!record && (
@@ -167,6 +172,7 @@ function RecordUploader({
           onChange={onRecordChange}
         />
       )}
+      {extraAction && <div className="mt-3">{extraAction}</div>}
     </div>
   );
 }
@@ -736,6 +742,78 @@ function ImportModal({
   );
 }
 
+// ============ 训记同步弹窗 ============
+function XunjiSyncModal({
+  isOpen,
+  onClose,
+  onSync,
+  date,
+  syncing
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onSync: (date: string) => void;
+  date: string;
+  syncing: boolean;
+}) {
+  const [localDate, setLocalDate] = useState(date);
+
+  useEffect(() => {
+    setLocalDate(date);
+  }, [date]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+        <div className="flex items-center justify-between p-4 border-b">
+          <h3 className="text-lg font-semibold">从训记同步训练记录</h3>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded" disabled={syncing}>
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">选择日期</label>
+            <input
+              type="date"
+              value={localDate}
+              onChange={(e) => setLocalDate(e.target.value)}
+              disabled={syncing}
+              className="input w-full"
+            />
+          </div>
+          <p className="text-xs text-gray-500">
+            将同步训记 App 中该日期的训练数据到当前复盘。同一日期 90 秒内重复同步会命中缓存。
+          </p>
+        </div>
+
+        <div className="flex justify-end gap-2 p-4 border-t">
+          <button onClick={onClose} className="btn-secondary px-4 py-2" disabled={syncing}>
+            取消
+          </button>
+          <button
+            onClick={() => onSync(localDate)}
+            disabled={syncing}
+            className="btn-primary px-4 py-2 disabled:opacity-50"
+          >
+            {syncing ? (
+              <span className="flex items-center gap-2">
+                <Loader2 size={16} className="animate-spin" />
+                同步中...
+              </span>
+            ) : (
+              '同步'
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ============ 时间线编辑组件 ============
 function TimelineEditor({ 
   timeline, 
@@ -1285,6 +1363,11 @@ export default function Reviews() {
     diet: boolean;
     workout: boolean;
   }>({ diet: false, workout: false });
+
+  // 训记同步弹窗状态
+  const [showXunjiModal, setShowXunjiModal] = useState(false);
+  const [xunjiSyncing, setXunjiSyncing] = useState(false);
+  const [xunjiDate, setXunjiDate] = useState<string>(format(currentDate, 'yyyy-MM-dd'));
   
   // 其他复盘表单（兼容旧版）
   const [formData, setFormData] = useState<ReviewFormData>({
@@ -1470,6 +1553,49 @@ export default function Reviews() {
       showToast(msg, 'error');
     } finally {
       setRecognizing(prev => ({ ...prev, [type]: false }));
+    }
+  };
+
+  // 处理训记同步
+  const openXunjiModal = () => {
+    const defaultDate = existingReview?.date
+      ? format(parseISO(existingReview.date), 'yyyy-MM-dd')
+      : format(currentDate, 'yyyy-MM-dd');
+    setXunjiDate(defaultDate);
+    setShowXunjiModal(true);
+  };
+
+  const handleXunjiSync = async (date: string) => {
+    if (!existingReview?.id) {
+      showToast('请先保存日复盘，再同步训记数据', 'error');
+      return;
+    }
+
+    setXunjiSyncing(true);
+    try {
+      const res = await xunjiAPI.sync(existingReview.id, date);
+      const record = res.data?.record;
+      if (record) {
+        setDailyForm(prev => ({ ...prev, workout_record: record }));
+        showToast('训记训练记录同步完成', 'success');
+      }
+    } catch (error: any) {
+      console.error('训记同步失败:', error);
+      let msg = '同步失败，请检查网络或 API Key 配置';
+      if (error.response?.status === 429) {
+        msg = '训记 API 频率限制，请 90 秒后重试';
+      } else if (error.response?.data) {
+        const data = error.response.data;
+        if (typeof data === 'string') {
+          msg = data;
+        } else if (data.detail) {
+          msg = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail);
+        }
+      }
+      showToast(msg, 'error');
+    } finally {
+      setXunjiSyncing(false);
+      setShowXunjiModal(false);
     }
   };
 
@@ -1763,6 +1889,16 @@ export default function Reviews() {
             recognizing={recognizing.workout}
             onRecognize={(file) => handleRecognize('workout', file)}
             onRecordChange={(record) => setDailyForm(prev => ({ ...prev, workout_record: record }))}
+            extraAction={
+              <button
+                type="button"
+                onClick={openXunjiModal}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm text-primary-600 bg-primary-50 hover:bg-primary-100 rounded-lg transition-colors"
+              >
+                <Download size={16} />
+                从训记同步
+              </button>
+            }
           />
         </div>
 
@@ -2067,6 +2203,15 @@ export default function Reviews() {
           </div>
         </div>
       </div>
+
+      {/* 训记同步弹窗 */}
+      <XunjiSyncModal
+        isOpen={showXunjiModal}
+        onClose={() => setShowXunjiModal(false)}
+        onSync={handleXunjiSync}
+        date={xunjiDate}
+        syncing={xunjiSyncing}
+      />
     </div>
   );
 }

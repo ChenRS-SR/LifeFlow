@@ -4,6 +4,7 @@
 日/周/月/季度/年度复盘
 """
 from typing import Any, List, Optional, Dict
+import re
 from datetime import date, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Query, File, UploadFile
 from sqlalchemy.orm import Session
@@ -16,6 +17,7 @@ from app.models.goal import GoalStatus, GoalPeriod
 from app.models.project import ProjectStatus
 from app.models.habit import HabitLog
 from app.services.vision_service import vision_service, VisionServiceError
+from app.services.xunji_client import xunji_service, XunjiClientError, XunjiRateLimitError, XunjiAuthError
 
 router = APIRouter(prefix="/reviews", tags=["复盘"])
 
@@ -461,3 +463,88 @@ def recognize_review_image(
     db.refresh(review)
 
     return {"type": type, "record": record}
+
+
+@router.post("/{review_id}/sync-xunji")
+def sync_xunji_workout(
+    review_id: int,
+    date: Optional[str] = Query(None, description="日期 (YYYY-MM-DD)，默认使用复盘日期"),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user)
+):
+    """
+    从训记 Open API 同步训练记录到复盘。
+
+    - date 参数可选，默认使用 review.date
+    - 同一日期 90 秒内重复请求会命中缓存
+    - 返回保存后的 workout_record
+    """
+    review = db.query(models.Review).filter(
+        models.Review.id == review_id,
+        models.Review.user_id == current_user.id
+    ).first()
+
+    if not review:
+        raise HTTPException(status_code=404, detail="复盘不存在")
+
+    if date:
+        if not re.match(r"^\d{4}-\d{2}-\d{2}$", date):
+            raise HTTPException(status_code=400, detail="日期格式错误，请使用 YYYY-MM-DD")
+        datestr = date
+    else:
+        if not review.date:
+            raise HTTPException(status_code=400, detail="复盘没有日期，请通过 date 参数指定")
+        datestr = review.date.isoformat()
+
+    try:
+        record = xunji_service.fetch_trains(datestr)
+    except XunjiRateLimitError as e:
+        raise HTTPException(status_code=429, detail=str(e)) from e
+    except XunjiAuthError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    except XunjiClientError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"训记同步失败: {e}") from e
+
+    review.workout_record = record
+    db.commit()
+    db.refresh(review)
+
+    return {"record": record}
+
+
+@router.post("/{review_id}/writeback-xunji")
+def writeback_xunji_workout(
+    review_id: int,
+    confirm: bool = Query(False, description="必须显式设为 true 才执行写回"),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user)
+):
+    """
+    将复盘中的 workout_record 写回到训记 App（预留接口）。
+
+    ⚠️ 此操作会修改训记 App 中的数据，必须显式确认！
+    当前版本仅做占位，不实际调用写回 API。
+    """
+    if not confirm:
+        raise HTTPException(
+            status_code=400,
+            detail="写回操作需要显式确认，请设置 confirm=true"
+        )
+
+    review = db.query(models.Review).filter(
+        models.Review.id == review_id,
+        models.Review.user_id == current_user.id
+    ).first()
+
+    if not review:
+        raise HTTPException(status_code=404, detail="复盘不存在")
+
+    if not review.workout_record:
+        raise HTTPException(status_code=400, detail="当前复盘没有健身记录，无法写回")
+
+    return {
+        "status": "not_implemented",
+        "message": "写回功能即将上线，本次未执行任何写回操作"
+    }

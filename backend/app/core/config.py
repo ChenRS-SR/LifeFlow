@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     AI_MAX_TOKENS: int = 1500            # 最大返回 token 数
     AI_TEMPERATURE: float = 0.2          # 低温度，保证 JSON 输出稳定
 
+    # 训记 Open API 配置（用于训练记录同步）
+    XUNJI_API_KEY: Optional[str] = None
+    XUNJI_BASE_URL: str = "https://trains.xunjiapp.cn"
+
     class Config:
         env_file = ".env"  # 从.env文件读取配置
 

@@ -40,6 +40,9 @@ services:
       - AI_BASE_URL=${AI_BASE_URL:-}
       - AI_MAX_TOKENS=${AI_MAX_TOKENS:-1500}
       - AI_TEMPERATURE=${AI_TEMPERATURE:-0.2}
+      # 训记 Open API 配置（用于训练记录同步）
+      - XUNJI_API_KEY=${XUNJI_API_KEY:-}
+      - XUNJI_BASE_URL=${XUNJI_BASE_URL:-https://trains.xunjiapp.cn}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s

@@ -311,5 +311,17 @@ export const visionAPI = {
   },
 };
 
+// ==================== 训记同步 API ====================
+export const xunjiAPI = {
+  sync: (reviewId: number, date?: string) =>
+    apiClient.post(`/api/reviews/${reviewId}/sync-xunji`, null, {
+      params: date ? { date } : undefined,
+    }),
+  writeback: (reviewId: number, confirm: boolean = false) =>
+    apiClient.post(`/api/reviews/${reviewId}/writeback-xunji`, null, {
+      params: { confirm: confirm ? 'true' : 'false' },
+    }),
+};
+
 // 导出默认实例
 export default apiClient;
