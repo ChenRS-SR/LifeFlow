@@ -14,7 +14,7 @@ const apiClient = axios.create({
 // 请求拦截器 - 添加认证信息
 apiClient.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token') || 'token_1';
+    const token = localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -232,7 +232,7 @@ export const reviewAPI = {
     return res.data;
   },
   
-  getPeriodSummary: async (period: string, params: { year: number; month?: number; week?: number; quarter?: number }) => {
+  getPeriodSummary: async (period: string, params: { year: number; month?: number; week?: number; quarter?: number; date?: string }) => {
     const res = await apiClient.get('/api/reviews/period/summary', { params: { period, ...params } });
     return res.data;
   },
@@ -262,16 +262,11 @@ export const reviewsAPI = {
     return res.data;
   },
   
-  getPeriodSummary: async (period: string, params: { year: number; month?: number; week?: number; quarter?: number }) => {
+  getPeriodSummary: async (period: string, params: { year: number; month?: number; week?: number; quarter?: number; date?: string }) => {
     const res = await apiClient.get('/api/reviews/period/summary', { params: { period, ...params } });
     return res.data;
   },
-  
-  getTodayDaily: async () => {
-    const res = await apiClient.get('/api/reviews/today');
-    return res.data;
-  },
-  
+
   create: (data: {
     period: string;
     year: number;

@@ -7,7 +7,7 @@ from typing import Any, List, Optional, Dict
 from datetime import date, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Query, File, UploadFile
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
+from sqlalchemy import func, and_, or_
 
 from app.api.deps import get_db, get_current_active_user
 from app import models, schemas
@@ -56,6 +56,7 @@ def get_period_summary(
     week: Optional[int] = Query(None, description="周数（周复盘需要）"),
     month: Optional[int] = Query(None, description="月份（月复盘需要）"),
     quarter: Optional[int] = Query(None, description="季度（季度复盘需要）"),
+    review_date: Optional[date] = Query(None, alias="date", description="日期（日复盘需要）"),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user)
 ):
@@ -70,8 +71,13 @@ def get_period_summary(
     """
     # 计算时间范围
     if period == models.ReviewPeriod.DAILY:
-        start_date = date(year, month or 1, 1)
-        end_date = start_date
+        if review_date:
+            start_date = review_date
+            end_date = review_date
+        else:
+            # 保留旧行为作为向后兼容
+            start_date = date(year, month or 1, 1)
+            end_date = start_date
     elif period == models.ReviewPeriod.WEEKLY:
         if not week:
             raise HTTPException(status_code=400, detail="周复盘需要提供 week 参数")
@@ -99,11 +105,14 @@ def get_period_summary(
         start_date = date(year, 1, 1)
         end_date = date(year, 12, 31)
     
-    # 任务统计
+    # 任务统计 - 使用业务日期（scheduled_date / due_date / completed_date）
     tasks_query = db.query(models.Task).filter(
         models.Task.user_id == current_user.id,
-        models.Task.created_at >= start_date,
-        models.Task.created_at <= end_date + timedelta(days=1)
+        or_(
+            (models.Task.scheduled_date >= start_date) & (models.Task.scheduled_date <= end_date),
+            (models.Task.due_date >= start_date) & (models.Task.due_date <= end_date),
+            (models.Task.completed_date >= start_date) & (models.Task.completed_date <= end_date),
+        )
     )
     total_tasks = tasks_query.count()
     completed_tasks = tasks_query.filter(models.Task.status == TaskStatus.COMPLETED).count()
@@ -125,11 +134,11 @@ def get_period_summary(
     for habit in habits:
         if period == models.ReviewPeriod.DAILY:
             check_date = end_date
-            log = db.query(HabitLog).filter(HabitLog.habit_id == habit.id, HabitLog.date == check_date).first()
+            log = db.query(HabitLog).filter(HabitLog.habit_id == habit.id, HabitLog.user_id == current_user.id, HabitLog.date == check_date).first()
             count = log.count if log else 0
             target = habit.get_target_for_date(check_date)
         else:
-            logs = db.query(HabitLog).filter(HabitLog.habit_id == habit.id, HabitLog.date >= start_date, HabitLog.date <= end_date).all()
+            logs = db.query(HabitLog).filter(HabitLog.habit_id == habit.id, HabitLog.user_id == current_user.id, HabitLog.date >= start_date, HabitLog.date <= end_date).all()
             count = sum(log.count for log in logs)
             if period == models.ReviewPeriod.WEEKLY:
                 target = habit.get_weekly_target_total()
@@ -206,8 +215,11 @@ def get_period_summary(
         milestones = [{"id": pg.id, "title": pg.title, "completed": pg.is_completed, "sort_order": pg.sort_order} for pg in project.project_goals]
         project_tasks = db.query(models.Task).filter(
             models.Task.project_id == project.id,
-            models.Task.created_at >= start_date,
-            models.Task.created_at <= end_date + timedelta(days=1)
+            or_(
+                (models.Task.scheduled_date >= start_date) & (models.Task.scheduled_date <= end_date),
+                (models.Task.due_date >= start_date) & (models.Task.due_date <= end_date),
+                (models.Task.completed_date >= start_date) & (models.Task.completed_date <= end_date),
+            )
         ).all()
         projects_summary.append({
             "id": project.id, "name": project.name, "progress": project.progress,
