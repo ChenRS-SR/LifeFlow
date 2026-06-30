@@ -464,6 +464,11 @@ class VisionService:
         if not isinstance(raw, str):
             return record
 
+        # 总热量修正：优先从「饮食摄入」提取，防止 AI 错把「还可以吃」当成总热量
+        m = re.search(r"饮食摄入\s*(\d+)", raw)
+        if m:
+            record["total_calories"] = int(m.group(1))
+
         # 热量预算：自定义预算 2670、预算 2670、还可以吃 895（剩余，不是预算）
         if not record.get("total_calories_target"):
             m = re.search(r"自定义预算\s*(\d+)", raw)

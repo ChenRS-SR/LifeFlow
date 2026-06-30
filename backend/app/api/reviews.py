@@ -372,6 +372,19 @@ def delete_review(
     return {"message": "复盘已删除"}
 
 
+def _guess_image_mime(image_bytes: bytes) -> str:
+    """根据文件头魔数推断图片 MIME 类型"""
+    if len(image_bytes) < 12:
+        return ""
+    if image_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if image_bytes.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if image_bytes.startswith(b"RIFF") and image_bytes[8:12] == b"WEBP":
+        return "image/webp"
+    return ""
+
+
 @router.post("/{review_id}/recognize-image")
 def recognize_review_image(
     review_id: int,
@@ -397,16 +410,22 @@ def recognize_review_image(
     if not review:
         raise HTTPException(status_code=404, detail="复盘不存在")
 
-    # 校验图片类型
-    allowed_types = {"image/jpeg", "image/png", "image/webp", "image/jpg"}
-    content_type = image.content_type or ""
-    if content_type.lower() not in allowed_types:
-        raise HTTPException(status_code=400, detail="只支持 jpg/png/webp 图片")
+    # 校验图片类型（支持 content-type 或文件头推断）
+    allowed_types = {"image/jpeg", "image/png", "image/webp", "image/jpg", "image/x-png"}
+    content_type = (image.content_type or "").lower()
 
     try:
         image_bytes = image.file.read()
         if len(image_bytes) == 0:
             raise HTTPException(status_code=400, detail="图片文件为空")
+
+        # 如果 content-type 不可靠，根据文件头推断
+        if content_type not in allowed_types:
+            guessed = _guess_image_mime(image_bytes)
+            if guessed in allowed_types:
+                content_type = guessed
+            else:
+                raise HTTPException(status_code=400, detail="只支持 jpg/png/webp 图片")
 
         record = vision_service.recognize(
             image_bytes=image_bytes,
