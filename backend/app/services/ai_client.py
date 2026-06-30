@@ -60,6 +60,7 @@ class AIClient:
         image_mime: str = "image/jpeg",
         min_pixels: Optional[int] = None,
         max_pixels: Optional[int] = None,
+        timeout: Optional[int] = None,
     ) -> str:
         """
         同步调用 chat completion。
@@ -71,6 +72,7 @@ class AIClient:
             image_mime: 图片 MIME 类型
             min_pixels: 图片最小像素阈值（部分 OCR 模型如 qwen3.5-ocr 需要）
             max_pixels: 图片最大像素阈值（部分 OCR 模型如 qwen3.5-ocr 需要）
+            timeout: 请求超时秒数，默认 60 秒
 
         Returns:
             AI 返回的文本内容
@@ -117,7 +119,7 @@ class AIClient:
         }
 
         try:
-            with httpx.Client(timeout=60) as client:
+            with httpx.Client(timeout=timeout or 60) as client:
                 resp = client.post(url, headers=headers, json=payload)
                 resp.raise_for_status()
                 data = resp.json()

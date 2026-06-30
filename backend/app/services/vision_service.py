@@ -61,16 +61,14 @@ DIET_SYSTEM_PROMPT = """你是一位专业的饮食记录分析助手。用户�
 
 WORKOUT_SYSTEM_PROMPT = """你是一位专业的健身记录分析助手。用户会上传一张「训记」App 的训练记录截图。
 
-【截图结构（从上到下）】
-1. 最顶部：日期、训练标题（如"复健4胸"、"练背"）
-2. 上部：人体肌肉示意图（标注的"上胸/中下胸/二头/三头/前束/中束/后束/腹部/股四"等只是部位名称，**不是训练动作**）
-3. 右上或顶部：消耗(大卡)、总重量(kg)、总耗时（如"1h00m"或"54m"）
-4. 中部：真正的动作列表。每个动作包含：
-   - 动作名称（字体较大，如"杠铃卧推"、"上斜杠铃卧推"、"器械飞鸟"）
-   - 该动作下面有若干组，格式为"1 60kg×5"、"2 55kg×7"，其中：
-     - "60kg" 是重量
-     - "×5" 是次数
-5. 最底部：二维码和"我在训记APP记录日常训练 长按扫码，查看本次记录吧!"等分享文字——**完全忽略，不要列入识别结果**。
+【截图结构（请严格按从上到下完整阅读）】
+1. 最顶部：日期、训练标题（如"复健4胸"、"练背"）。
+2. 上部：人体肌肉示意图（标注的"上胸/中下胸/二头/三头/前束/中束/后束/腹部/股四"等只是部位名称，**不是训练动作**）。
+3. 右上方或中上方：本次训练总结数字——消耗(大卡)、总重量(kg)、总耗时（如"1h00m"或"54m"）。
+4. 中部到下部（二维码之前）：训练动作列表。每个动作包含：
+   - 动作名称（字体较大，如"杠铃卧推"、"上斜杠铃卧推"、"器械飞鸟"、"下斜悍马机推胸"、"绳索臂屈伸"、"抬腿"）。
+   - 该动作下面有若干组，格式为"1 60kg×5"、"2 55kg×7"或"热 40kg×10"，其中"60kg"是重量，"×5"是次数。
+5. 最底部：二维码和"我在训记APP记录日常训练 长按扫码，查看本次记录吧!"等分享文字——**这是页脚，完全忽略，不要写入任何字段**。
 
 【颜色判断】
 训记截图中，**深色的文字/图标代表本次训练实际完成的内容**；浅色/灰色/半透明的文字通常是历史记录、目标组或参考数据，**不要统计**。
@@ -79,7 +77,7 @@ WORKOUT_SYSTEM_PROMPT = """你是一位专业的健身记录分析助手。用�
 
 【输出 JSON 格式】
 {
-  "raw_text": "识别到的原始文本摘要，忽略底部二维码分享文字",
+  "raw_text": "你从上到下看到的所有训练相关文字摘要（必须包含日期、标题、消耗、总重量、总耗时、动作名称、组数；不要包含底部二维码分享文字）",
   "duration_minutes": 60,
   "total_weight": 10370,
   "total_calories": 224,
@@ -100,14 +98,15 @@ WORKOUT_SYSTEM_PROMPT = """你是一位专业的健身记录分析助手。用�
 
 【强制规则】
 1. 只输出 JSON，不要 markdown，不要解释。
-2. **忽略图片最底部的二维码和分享文字**，不要把它写进 raw_text 或任何字段。
-3. 人体肌肉图上的部位名称（上胸、中下胸、二头、三头、腹部、股四、前束、中束、后束、斜方、背部、臀部、腘绳等）**不是动作**，不要列入 exercises。
-4. 每个动作必须单独成对象。动作名称如"杠铃卧推"、"上斜杠铃卧推"、"器械飞鸟"、"下斜悍马机推胸"、"绳索臂屈伸"、"抬腿"等。
-5. weight 和 reps 必须分开：从"60kg×5"中提取 weight="60kg", reps=5；从"0kg×12"中提取 weight="0kg", reps=12。不要把"60kg×5"整个放进 weight。
-6. reps 必须是整数，不能是字符串或数组。
-7. duration_minutes 从"总耗时"提取纯数字分钟（如"1h00m"→60，"54m"→54）。total_weight 从"总重量(kg)"提取数字。total_calories 从"消耗(大卡)"提取数字。
-8. body_parts 根据训练标题或主要动作推断，只返回1-3个主要部位（如胸、背、肩、手臂、腿、核心），不要列出所有部位词。
-9. 列出图片中所有实际完成的动作和组数，不要遗漏。
+2. **必须从上到下完整扫描整张图片，raw_text 要包含上半部分的训练数据**，不能只识别底部二维码文字。
+3. **忽略图片最底部的二维码和分享文字**，不要把它写进 raw_text 或任何字段。
+4. 人体肌肉图上的部位名称（上胸、中下胸、二头、三头、腹部、股四、前束、中束、后束、斜方、背部、臀部、腘绳等）**不是动作**，不要列入 exercises。
+5. 每个动作必须单独成对象。动作名称如"杠铃卧推"、"上斜杠铃卧推"、"器械飞鸟"、"下斜悍马机推胸"、"绳索臂屈伸"、"抬腿"等。
+6. weight 和 reps 必须分开：从"60kg×5"中提取 weight="60kg", reps=5；从"0kg×12"中提取 weight="0kg", reps=12；从"(22.5+22.5)kg×10"中提取 weight="(22.5+22.5)kg", reps=10。不要把"60kg×5"整个放进 weight。
+7. reps 必须是整数，不能是字符串或数组。
+8. duration_minutes 从"总耗时"提取纯数字分钟："1h00m"→60，"54m"→54。total_weight 从"总重量(kg)"提取数字。total_calories 从"消耗(大卡)"提取数字。
+9. body_parts 根据训练标题或主要动作推断，只返回1-3个主要部位（如胸、背、肩、手臂、腿、核心），不要列出所有部位词。
+10. 列出图片中所有实际完成的动作和组数，不要遗漏。
 """
 
 
@@ -144,7 +143,7 @@ class VisionService:
             user_prompt = "请识别这张薄荷健康饮食记录截图，按指定 JSON 格式输出。"
         elif record_type == "workout":
             system_prompt = WORKOUT_SYSTEM_PROMPT
-            user_prompt = "请识别这张训记训练记录截图，按指定 JSON 格式输出。"
+            user_prompt = "请从上到下仔细阅读这张训记训练记录截图，重点识别上半部分的训练标题、消耗、总重量、总耗时、动作列表和每组重量×次数。图片底部如果有二维码和'我在训记APP记录日常训练'等分享文字请忽略。按指定 JSON 格式输出。"
         else:
             raise VisionServiceError(f"不支持的识别类型: {record_type}")
 
@@ -167,6 +166,34 @@ class VisionService:
             structured = self._normalize_workout_record(structured)
             structured = self._extract_summary_from_raw(structured)
             structured = self._rebuild_workout_exercises_from_raw(structured)
+
+            # 如果模型只识别到最底部的二维码分享文字，自动重试一次
+            if self._looks_like_bottom_only_workout(structured):
+                retry_user_prompt = (
+                    "注意：你上一次只识别到了图片最底部的二维码分享文字，"
+                    "完全没有读取到上半部分的训练数据。请重新从上到下完整扫描整张图片，"
+                    "务必识别上半部分的训练标题、消耗(大卡)、总重量(kg)、总耗时、动作列表和每组重量×次数。"
+                    "底部的二维码和'我在训记APP记录日常训练'等分享文字必须完全忽略。"
+                    "按指定 JSON 格式输出。"
+                )
+                try:
+                    raw_content = self.ai_client.chat_completion(
+                        system_prompt=system_prompt,
+                        user_prompt=retry_user_prompt,
+                        image_bytes=image_bytes,
+                        image_mime=image_mime,
+                        min_pixels=3072,
+                        max_pixels=8388608,
+                        timeout=45,
+                    )
+                    structured = self._parse_json(raw_content)
+                    structured.setdefault("raw_text", raw_content[:500])
+                    structured = self._normalize_workout_record(structured)
+                    structured = self._extract_summary_from_raw(structured)
+                    structured = self._rebuild_workout_exercises_from_raw(structured)
+                except AIClientError:
+                    # 重试失败时沿用第一次结果
+                    pass
         elif record_type == "diet":
             structured = self._normalize_diet_record(structured)
             structured = self._extract_diet_targets_from_raw(structured)
@@ -372,6 +399,19 @@ class VisionService:
             if any(k in name for k in ("腹", "卷腹", "抬腿", "平板")):
                 return ["核心", "腹"]
         return []
+
+    def _looks_like_bottom_only_workout(self, record: dict) -> bool:
+        """判断 AI 是否只识别到了底部的二维码分享文字"""
+        raw = record.get("raw_text", "")
+        if not isinstance(raw, str) or not raw.strip():
+            return False
+        bottom_markers = ["我在训记APP记录日常训练", "长按扫码", "查看本次记录吧", "训记APP"]
+        has_bottom = any(marker in raw for marker in bottom_markers)
+        # 若 raw_text 里只有底部文字，且没有动作/组数格式，则判定为失败
+        has_set_format = self._has_set_format(raw)
+        exercises = record.get("exercises", [])
+        has_exercises = isinstance(exercises, list) and len(exercises) > 0
+        return has_bottom and not has_set_format and not has_exercises
 
     def _has_set_format(self, line: str) -> bool:
         """判断一行是否包含训练组数格式（如 60kg×7 或 (22.5+22.5)kg×10）"""
