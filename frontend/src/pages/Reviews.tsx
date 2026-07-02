@@ -1533,13 +1533,16 @@ export default function Reviews() {
       const res = await visionAPI.recognize(existingReview.id, type, file);
       const record = res.data?.record;
       if (record) {
-        setDailyForm(prev => ({
-          ...prev,
+        // 先算出包含识别结果的最新表单，再 setState + 立即保存，
+        // 防止 handleSave 读到尚未更新的旧 dailyForm 而丢失识别数据。
+        const updatedForm = {
+          ...dailyForm,
           [type === 'diet' ? 'diet_record' : 'workout_record']: record
-        }));
+        };
+        setDailyForm(updatedForm);
         showToast(`${type === 'diet' ? '饮食' : '健身'}记录识别完成，正在自动保存...`, 'success');
         // 识别成功后自动保存，避免用户忘记点保存导致刷新后丢失
-        await handleSave();
+        await handleSave(updatedForm);
       }
     } catch (error: any) {
       console.error('图片识别失败:', error);
@@ -1602,32 +1605,37 @@ export default function Reviews() {
   };
 
   // 保存复盘
-  const handleSave = async () => {
+  // dailyFormOverride 用于在 setDailyForm 后立刻保存时传入最新的表单数据，
+  // 避免 React 状态异步更新导致的 stale closure 问题。
+  const handleSave = async (dailyFormOverride?: DailyFormData) => {
     setSaving(true);
     try {
       const params = getPeriodParams();
       let data: any;
-      
+
+      // 使用传入的最新表单，否则回退到当前 state
+      const sourceDailyForm = dailyFormOverride ?? dailyForm;
+
       if (activeTab === 'daily') {
         // 清理 timeline 数据，确保格式正确
-        const cleanTimeline = dailyForm.timeline.map(item => ({
+        const cleanTimeline = sourceDailyForm.timeline.map(item => ({
           time: item.time || '09:00',
           content: item.content,
           type: item.type || 'life',
           ref_id: item.ref_id || null
         }));
-        
+
         data = {
           period: activeTab,
           ...params,
           timeline: cleanTimeline,
-          notes: dailyForm.notes,
-          tomorrow: dailyForm.tomorrow,
-          mood: dailyForm.mood,
-          diet_record: dailyForm.diet_record,
-          workout_record: dailyForm.workout_record,
-          highlights: dailyForm.notes, // 兼容旧字段
-          next_steps: dailyForm.tomorrow
+          notes: sourceDailyForm.notes,
+          tomorrow: sourceDailyForm.tomorrow,
+          mood: sourceDailyForm.mood,
+          diet_record: sourceDailyForm.diet_record,
+          workout_record: sourceDailyForm.workout_record,
+          highlights: sourceDailyForm.notes, // 兼容旧字段
+          next_steps: sourceDailyForm.tomorrow
         };
       } else {
         data = { period: activeTab, ...params, ...formData };
@@ -2195,7 +2203,7 @@ export default function Reviews() {
             )}
             
             <button
-              onClick={handleSave}
+              onClick={() => handleSave()}
               disabled={saving}
               className="w-full btn-primary flex items-center justify-center gap-2 py-3 mt-6"
             >

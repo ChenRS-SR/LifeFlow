@@ -159,5 +159,8 @@ export interface Review {
   interpretive_summary?: string;
   decisional_summary?: string;
   created_at: string;
+  // AI 识别后的饮食/健身记录
+  diet_record?: Record<string, any> | null;
+  workout_record?: Record<string, any> | null;
 }
 
