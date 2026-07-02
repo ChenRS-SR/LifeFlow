@@ -1537,7 +1537,9 @@ export default function Reviews() {
           ...prev,
           [type === 'diet' ? 'diet_record' : 'workout_record']: record
         }));
-        showToast(`${type === 'diet' ? '饮食' : '健身'}记录识别完成`, 'success');
+        showToast(`${type === 'diet' ? '饮食' : '健身'}记录识别完成，正在自动保存...`, 'success');
+        // 识别成功后自动保存，避免用户忘记点保存导致刷新后丢失
+        await handleSave();
       }
     } catch (error: any) {
       console.error('图片识别失败:', error);
