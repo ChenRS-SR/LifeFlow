@@ -470,15 +470,13 @@ class VisionService:
     def _rebuild_meals_from_raw(self, raw: str) -> List[Dict[str, Any]]:
         """
         从 raw_text 按版面结构重建 meals。
-        薄荷截图 raw_text 通常长这样：
-            早餐 建议657-919千卡 734千卡
-            牛奶、生煎包、白菜猪肉锅贴
-            午餐 建议919-1182千卡 609千卡
-            炒鸡蛋、白米饭、红提、...
-            晚餐 建议657-919千卡 941千卡
-            米饭、烧鸭、白切鸡
-            加餐 899千卡
-            牛奶、水蜜桃、冰淇淋(脆皮甜筒)、蛋挞
+        支持两种排版：
+          A) 餐名、建议范围、热量在同一行：
+             早餐 建议657-919千卡 734千卡
+          B) 分行排版（实际 OCR 常见）：
+             早餐 建议657-919千卡
+             734千卡
+             牛奶、生煎包、白菜猪肉锅贴
         """
         if not isinstance(raw, str) or not raw.strip():
             return []
@@ -486,31 +484,38 @@ class VisionService:
         lines = [l.strip() for l in raw.splitlines() if l.strip()]
         meals: List[Dict[str, Any]] = []
 
-        # 餐名行：包含餐名 + （可选建议范围）+ 数字 + 千卡
-        meal_header_re = re.compile(
-            r"^(早餐|早加餐|午餐|午加餐|晚餐|晚加餐|加餐)"
-            r"(?:\s*建议\d+\s*[-－]\s*\d+\s*千卡)?"
-            r"\s*(\d+)\s*千卡"
-        )
+        # 餐名行：只匹配餐名，后面可选建议范围
+        meal_name_re = re.compile(r"^(早餐|早加餐|午餐|午加餐|晚餐|晚加餐|加餐)(?:\s*建议\d+\s*[-－]\s*\d+\s*千卡)?")
+        # 独立的千卡数字行
+        kcal_re = re.compile(r"^(\d+)\s*千卡$")
 
         i = 0
         while i < len(lines):
             line = lines[i]
-            m = meal_header_re.match(line)
+            m = meal_name_re.match(line)
             if not m:
                 i += 1
                 continue
 
             meal_name = m.group(1)
-            meal_cal = int(m.group(2))
+
+            # 找该餐的总热量：优先同一行，其次下一行独立的 "734千卡"
+            meal_cal = None
+            same_line_kcal = re.search(r"(\d+)\s*千卡", line)
+            if same_line_kcal and "建议" not in line[same_line_kcal.start():]:
+                meal_cal = int(same_line_kcal.group(1))
+            elif i + 1 < len(lines) and kcal_re.match(lines[i + 1]):
+                meal_cal = int(kcal_re.match(lines[i + 1]).group(1))
+                i += 1
+
             foods: List[Dict[str, Any]] = []
 
-            # 收集该餐的食物行，直到遇到下一个餐名、底部广告或营养素等
+            # 收集该餐的食物行
             i += 1
             while i < len(lines):
                 candidate = lines[i]
                 # 下一个餐名：停止
-                if meal_header_re.match(candidate):
+                if meal_name_re.match(candidate):
                     break
                 # 底部广告/总结行：停止
                 if candidate in ("薄荷健康", "体重管理就用薄荷健康", "AI算热量记饮食"):
@@ -519,7 +524,15 @@ class VisionService:
                     break
                 if re.search(r"^BH\d+", candidate):
                     break
-                # 食物行：通常是顿号分隔的食物列表，也可能带括号备注
+                # 跳过独立的千卡数字行（这是餐总热量，不是食物）
+                if kcal_re.match(candidate):
+                    i += 1
+                    continue
+                # 跳过建议范围行
+                if re.search(r"^建议\d+\s*[-－]\s*\d+\s*千卡", candidate):
+                    i += 1
+                    continue
+                # 食物行：顿号分隔的食物列表
                 if "、" in candidate or self._looks_like_food_name(candidate):
                     for food_name in candidate.split("、"):
                         food_name = food_name.strip()
@@ -531,7 +544,7 @@ class VisionService:
                             foods.append({"name": food_name, "weight": "", "calories": None})
                 i += 1
 
-            # 去重：连续相同食物只保留一个
+            # 去重
             seen = set()
             unique_foods = []
             for f in foods:
@@ -601,44 +614,49 @@ class VisionService:
         if not isinstance(raw, str) or not raw.strip():
             return record
 
+        lines = [l.strip() for l in raw.splitlines() if l.strip()]
+
         # 总热量：必须匹配「饮食摄入」
-        m = re.search(r"饮食摄入\s*[:：]?\s*(\d+)", raw)
-        if m:
-            record["total_calories"] = int(m.group(1))
+        for i, line in enumerate(lines):
+            m = re.match(r"饮食摄入\s*[:：]?\s*(\d+)", line)
+            if m:
+                record["total_calories"] = int(m.group(1))
+                break
 
         # 预算：「自定义预算」或「预算」（无条件覆盖）
-        m = re.search(r"自定义预算\s*[:：]?\s*(\d+)", raw)
-        if not m:
-            m = re.search(r"预算\s*[:：]?\s*(\d+)", raw)
-        if m:
-            record["total_calories_target"] = int(m.group(1))
+        for line in lines:
+            m = re.search(r"自定义预算\s*[:：]?\s*(\d+)", line)
+            if not m:
+                m = re.search(r"预算\s*[:：]?\s*(\d+)", line)
+            if m:
+                record["total_calories_target"] = int(m.group(1))
+                break
 
-        # 三大营养素：支持「碳水化合物 237 / 335克」等（无条件覆盖当前值和目标值）
-        # 蛋白质
-        m = re.search(r"蛋白质\s*[:：]?\s*\D*(\d+)\s*/\s*(\d+)\s*[克g]", raw, re.IGNORECASE)
-        if not m:
-            m = re.search(r"蛋白质\s*[:：]?\s*(\d+)\s*/\s*(\d+)", raw)
-        if m:
-            record["total_protein"] = int(m.group(1))
-            record["total_protein_target"] = int(m.group(2))
+        # 三大营养素：支持标题和数值分行的排版
+        # 先找标题行位置，再找最近的一个 "数字 / 数字 克"
+        def extract_nutrient(title: str) -> Optional[tuple]:
+            for i, line in enumerate(lines):
+                if line.startswith(title):
+                    # 向后找 5 行内的 "数字 / 数字 克"
+                    for j in range(i, min(len(lines), i + 6)):
+                        m = re.search(r"(\d+)\s*/\s*(\d+)\s*[克g]", lines[j])
+                        if m:
+                            return int(m.group(1)), int(m.group(2))
+            return None
 
-        # 碳水化合物
-        m = re.search(r"碳水化合物\s*[:：]?\s*\D*(\d+)\s*/\s*(\d+)\s*[克g]", raw, re.IGNORECASE)
-        if not m:
-            m = re.search(r"碳水\s*[:：]?\s*(\d+)\s*/\s*(\d+)\s*[克g]", raw, re.IGNORECASE)
-        if not m:
-            m = re.search(r"碳水化合物\s*[:：]?\s*(\d+)\s*/\s*(\d+)", raw)
-        if m:
-            record["total_carbs"] = int(m.group(1))
-            record["total_carbs_target"] = int(m.group(2))
+        protein = extract_nutrient("蛋白质")
+        if protein:
+            record["total_protein"], record["total_protein_target"] = protein
 
-        # 脂肪
-        m = re.search(r"脂肪\s*[:：]?\s*\D*(\d+)\s*/\s*(\d+)\s*[克g]", raw, re.IGNORECASE)
-        if not m:
-            m = re.search(r"脂肪\s*[:：]?\s*(\d+)\s*/\s*(\d+)", raw)
-        if m:
-            record["total_fat"] = int(m.group(1))
-            record["total_fat_target"] = int(m.group(2))
+        carbs = extract_nutrient("碳水化合物")
+        if not carbs:
+            carbs = extract_nutrient("碳水")
+        if carbs:
+            record["total_carbs"], record["total_carbs_target"] = carbs
+
+        fat = extract_nutrient("脂肪")
+        if fat:
+            record["total_fat"], record["total_fat_target"] = fat
 
         return record
 
