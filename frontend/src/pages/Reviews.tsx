@@ -1533,14 +1533,16 @@ export default function Reviews() {
       const res = await visionAPI.recognize(existingReview.id, type, file);
       const record = res.data?.record;
       if (record) {
-        // 同步构造最新 form，避免 setDailyForm 异步导致保存读到旧数据
-        const updatedForm: DailyFormData = {
+        // 先算出包含识别结果的最新表单，再 setState + 立即保存，
+        // 防止 handleSave 读到尚未更新的旧 dailyForm 而丢失识别数据。
+        const updatedForm = {
           ...dailyForm,
           [type === 'diet' ? 'diet_record' : 'workout_record']: record
         };
         setDailyForm(updatedForm);
         showToast(`${type === 'diet' ? '饮食' : '健身'}记录识别完成，正在自动保存...`, 'success');
-        await saveDailyForm(updatedForm);
+        // 识别成功后自动保存，避免用户忘记点保存导致刷新后丢失
+        await handleSave(updatedForm);
       }
     } catch (error: any) {
       console.error('图片识别失败:', error);
@@ -1602,16 +1604,21 @@ export default function Reviews() {
     }
   };
 
-  // 实际保存逻辑，接受当前要保存的 form（识别后可直接传入最新数据）
-  const saveDailyForm = async (formToSave: DailyFormData) => {
+  // 保存复盘
+  // dailyFormOverride 用于在 setDailyForm 后立刻保存时传入最新的表单数据，
+  // 避免 React 状态异步更新导致的 stale closure 问题。
+  const handleSave = async (dailyFormOverride?: DailyFormData) => {
     setSaving(true);
     try {
       const params = getPeriodParams();
       let data: any;
 
+      // 使用传入的最新表单，否则回退到当前 state
+      const sourceDailyForm = dailyFormOverride ?? dailyForm;
+
       if (activeTab === 'daily') {
         // 清理 timeline 数据，确保格式正确
-        const cleanTimeline = formToSave.timeline.map(item => ({
+        const cleanTimeline = sourceDailyForm.timeline.map(item => ({
           time: item.time || '09:00',
           content: item.content,
           type: item.type || 'life',
@@ -1622,24 +1629,24 @@ export default function Reviews() {
           period: activeTab,
           ...params,
           timeline: cleanTimeline,
-          notes: formToSave.notes,
-          tomorrow: formToSave.tomorrow,
-          mood: formToSave.mood,
-          diet_record: formToSave.diet_record,
-          workout_record: formToSave.workout_record,
-          highlights: formToSave.notes, // 兼容旧字段
-          next_steps: formToSave.tomorrow
+          notes: sourceDailyForm.notes,
+          tomorrow: sourceDailyForm.tomorrow,
+          mood: sourceDailyForm.mood,
+          diet_record: sourceDailyForm.diet_record,
+          workout_record: sourceDailyForm.workout_record,
+          highlights: sourceDailyForm.notes, // 兼容旧字段
+          next_steps: sourceDailyForm.tomorrow
         };
       } else {
         data = { period: activeTab, ...params, ...formData };
       }
-
+      
       if (existingReview) {
         await reviewsAPI.update(existingReview.id, data);
       } else {
         await reviewsAPI.create(data);
       }
-
+      
       await loadCurrentReview();
       await loadReviews();
       showToast('复盘已保存', 'success');
@@ -1663,11 +1670,6 @@ export default function Reviews() {
     } finally {
       setSaving(false);
     }
-  };
-
-  // 保存复盘（按钮触发）
-  const handleSave = async () => {
-    await saveDailyForm(dailyForm);
   };
 
   // 周期切换
@@ -2201,7 +2203,7 @@ export default function Reviews() {
             )}
             
             <button
-              onClick={handleSave}
+              onClick={() => handleSave()}
               disabled={saving}
               className="w-full btn-primary flex items-center justify-center gap-2 py-3 mt-6"
             >
