@@ -501,8 +501,10 @@ class VisionService:
 
             # 找该餐的总热量：优先同一行，其次下一行独立的 "734千卡"
             meal_cal = None
-            same_line_kcal = re.search(r"(\d+)\s*千卡", line)
-            if same_line_kcal and "建议" not in line[same_line_kcal.start():]:
+            # 先把「建议xxx-yyy千卡」范围从当前行移除，避免误把范围上限当餐总热量
+            line_without_range = re.sub(r"建议\s*\d+\s*[-－—~]\s*\d+\s*千卡", "", line)
+            same_line_kcal = re.search(r"(\d+)\s*千卡", line_without_range)
+            if same_line_kcal:
                 meal_cal = int(same_line_kcal.group(1))
             elif i + 1 < len(lines) and kcal_re.match(lines[i + 1]):
                 meal_cal = int(kcal_re.match(lines[i + 1]).group(1))
@@ -633,15 +635,15 @@ class VisionService:
                 break
 
         # 三大营养素：支持标题和数值分行的排版
-        # 先找标题行位置，再找最近的一个 "数字 / 数字 克"
+        # 对每个标题，在 raw_text 中定位后取最近的一个 "数字 / 数字 克"（最多跨 60 字符）
         def extract_nutrient(title: str) -> Optional[tuple]:
-            for i, line in enumerate(lines):
-                if line.startswith(title):
-                    # 向后找 5 行内的 "数字 / 数字 克"
-                    for j in range(i, min(len(lines), i + 6)):
-                        m = re.search(r"(\d+)\s*/\s*(\d+)\s*[克g]", lines[j])
-                        if m:
-                            return int(m.group(1)), int(m.group(2))
+            pattern = re.compile(
+                re.escape(title) + r".{0,60}?(\d+)\s*/\s*(\d+)\s*[克g]",
+                re.DOTALL | re.IGNORECASE,
+            )
+            m = pattern.search(raw)
+            if m:
+                return int(m.group(1)), int(m.group(2))
             return None
 
         protein = extract_nutrient("蛋白质")
@@ -669,17 +671,15 @@ class VisionService:
             name = meal.get("name", "")
             if not name:
                 continue
-            # 找包含餐名+千卡或千卡+餐名的行
+            # 找包含餐名的行
             for i, line in enumerate(lines):
                 if name not in line:
                     continue
-                # 同一行或相邻行找「XXX 千卡」
+                # 同一行或相邻行找「XXX 千卡」，先移除建议范围避免误取
                 for j in range(i, min(len(lines), i + 4)):
-                    m = re.search(r"(\d+)\s*千卡", lines[j])
+                    scan_line = re.sub(r"建议\s*\d+\s*[-－—~]\s*\d+\s*千卡", "", lines[j])
+                    m = re.search(r"(\d+)\s*千卡", scan_line)
                     if m:
-                        # 跳过建议范围行（如"建议657-919千卡"）
-                        if "建议" in lines[j]:
-                            continue
                         meal["calories"] = int(m.group(1))
                         break
                 break
