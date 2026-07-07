@@ -442,145 +442,130 @@ class VisionService:
 
     def _normalize_diet_record(self, record: dict) -> dict:
         """
-        后处理饮食记录：
-        1. 从 raw_text 重新校正总热量、预算、三大营养素（AI 容易把"还可以吃"错填为 total_calories）
-        2. 连续同名餐（如两个"晚餐"）把第二个改名为对应加餐
-        3. 为缺失名称的食物从 raw_text 推断食物名
-        4. 从 raw_text 修正每个食物的 calories 并补全漏识别食物
-        5. 用每餐食物热量之和修正/补充该餐总热量
-        6. 清洗营养素数值并做一致性校验
+        后处理饮食记录。
+        核心策略：AI 返回的 meals 结构不可靠（餐名归错、建议范围当食物、旧数据残留），
+        因此优先从 raw_text 结构化重建一份准确的记录；只有在 raw_text 实在无法解析时，
+        才回退到 AI 返回的 meals 做兜底。
         """
         raw = record.get("raw_text", "")
 
-        # 先用 raw_text 校正总热量和营养素（优先级高于 AI 返回的 JSON）
+        # 1. 从 raw_text 无条件校正总热量、预算、三大营养素
         record = self._extract_diet_summary_from_raw(record, raw)
-
         for key in ["total_calories", "total_protein", "total_carbs", "total_fat"]:
             record[key] = self._to_int(record.get(key))
 
-        merged_meals = []
-        for meal in record.get("meals", []):
-            if not isinstance(meal, dict):
-                continue
-            name = (meal.get("name") or "").strip()
-            foods = meal.get("foods") or []
-            if not isinstance(foods, list):
-                foods = []
-            meal_cal = self._to_int(meal.get("calories"))
+        # 2. 从 raw_text 重建 meals
+        rebuilt_meals = self._rebuild_meals_from_raw(raw)
 
-            # 连续同名餐：第二个改名为对应加餐（晚餐->晚加餐等）
-            if merged_meals and merged_meals[-1]["name"] == name and name in self._DUPLICATE_MEAL_MAP:
-                name = self._DUPLICATE_MEAL_MAP[name]
+        # 3. 如果 raw_text 重建失败，回退并清洗 AI 返回的 meals
+        if rebuilt_meals:
+            record["meals"] = rebuilt_meals
+        else:
+            record["meals"] = self._clean_ai_meals(record.get("meals", []), raw)
 
-            merged_meals.append({"name": name, "calories": meal_cal, "foods": foods})
-
-        # 清洗食物并推断缺失名称
-        for meal in merged_meals:
-            cleaned_foods = []
-            for f in meal.get("foods", []):
-                if not isinstance(f, dict):
-                    continue
-                weight = f.get("weight", "")
-                calories = self._to_int(f.get("calories"))
-                name = (f.get("name") or "").strip()
-                if not name:
-                    name = self._infer_food_name(raw, weight, calories)
-                cleaned_foods.append({"name": name, "weight": weight, "calories": calories})
-            meal["foods"] = cleaned_foods
-
-        # 用 raw_text 修正食物热量并补全漏识别食物
-        if raw:
-            self._fix_food_calories_from_raw(merged_meals, raw)
-            self._add_missing_foods_from_raw(merged_meals, raw)
-
-        # 修正每餐总热量：优先使用 raw_text 中该餐卡片右侧的总热量
-        self._fix_meal_calories_from_raw(merged_meals, raw)
-
-        # 最终校验：宏量营养素和总热量是否一致
-        record["meals"] = merged_meals
+        # 4. 最终校验：宏量营养素和总热量是否一致
         record = self._validate_diet_numbers(record)
         return record
 
-    def _fix_food_calories_from_raw(self, meals: list, raw: str) -> None:
-        """根据 raw_text 修正每个已有食物的热量（AI 常把餐总热量错填为食物热量）"""
+    def _rebuild_meals_from_raw(self, raw: str) -> List[Dict[str, Any]]:
+        """
+        从 raw_text 按版面结构重建 meals。
+        薄荷截图 raw_text 通常长这样：
+            早餐 建议657-919千卡 734千卡
+            牛奶、生煎包、白菜猪肉锅贴
+            午餐 建议919-1182千卡 609千卡
+            炒鸡蛋、白米饭、红提、...
+            晚餐 建议657-919千卡 941千卡
+            米饭、烧鸭、白切鸡
+            加餐 899千卡
+            牛奶、水蜜桃、冰淇淋(脆皮甜筒)、蛋挞
+        """
+        if not isinstance(raw, str) or not raw.strip():
+            return []
+
         lines = [l.strip() for l in raw.splitlines() if l.strip()]
+        meals: List[Dict[str, Any]] = []
+
+        # 餐名行：包含餐名 + （可选建议范围）+ 数字 + 千卡
+        meal_header_re = re.compile(
+            r"^(早餐|早加餐|午餐|午加餐|晚餐|晚加餐|加餐)"
+            r"(?:\s*建议\d+\s*[-－]\s*\d+\s*千卡)?"
+            r"\s*(\d+)\s*千卡"
+        )
+
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            m = meal_header_re.match(line)
+            if not m:
+                i += 1
+                continue
+
+            meal_name = m.group(1)
+            meal_cal = int(m.group(2))
+            foods: List[Dict[str, Any]] = []
+
+            # 收集该餐的食物行，直到遇到下一个餐名、底部广告或营养素等
+            i += 1
+            while i < len(lines):
+                candidate = lines[i]
+                # 下一个餐名：停止
+                if meal_header_re.match(candidate):
+                    break
+                # 底部广告/总结行：停止
+                if candidate in ("薄荷健康", "体重管理就用薄荷健康", "AI算热量记饮食"):
+                    break
+                if re.search(r"^(饮食摄入|还可以吃|自定义预算|多吃了|运动消耗|碳水化合物|蛋白质|脂肪)", candidate):
+                    break
+                if re.search(r"^BH\d+", candidate):
+                    break
+                # 食物行：通常是顿号分隔的食物列表，也可能带括号备注
+                if "、" in candidate or self._looks_like_food_name(candidate):
+                    for food_name in candidate.split("、"):
+                        food_name = food_name.strip()
+                        if not food_name:
+                            continue
+                        # 去掉尾部可能的备注如 "- 166 kcal"
+                        food_name = re.sub(r"\s*[-–—]\s*\d+\s*kcal$", "", food_name, flags=re.IGNORECASE)
+                        if food_name and not re.search(r"\d+\s*千卡", food_name):
+                            foods.append({"name": food_name, "weight": "", "calories": None})
+                i += 1
+
+            # 去重：连续相同食物只保留一个
+            seen = set()
+            unique_foods = []
+            for f in foods:
+                key = f["name"]
+                if key not in seen:
+                    seen.add(key)
+                    unique_foods.append(f)
+
+            meals.append({"name": meal_name, "calories": meal_cal, "foods": unique_foods})
+
+        return meals
+
+    def _clean_ai_meals(self, meals: Any, raw: str) -> List[Dict[str, Any]]:
+        """当 raw_text 无法重建时，回退清洗 AI 返回的 meals"""
+        if not isinstance(meals, list):
+            return []
+        cleaned: List[Dict[str, Any]] = []
         for meal in meals:
-            for f in meal.get("foods", []):
+            if not isinstance(meal, dict):
+                continue
+            name = (meal.get("name") or "").strip()
+            foods = []
+            for f in meal.get("foods", []) or []:
                 if not isinstance(f, dict):
                     continue
-                name = f.get("name", "")
-                if not name:
+                fname = (f.get("name") or "").strip()
+                # 排除明显不是食物的条目
+                if not fname or "建议" in fname or "预算" in fname or "摄入" in fname:
                     continue
-                for i, line in enumerate(lines):
-                    if name not in line:
-                        continue
-                    # 向后找第一个 "数字 + 千卡"
-                    for j in range(i + 1, min(len(lines), i + 5)):
-                        m = re.search(r"(\d+)\s*千卡", lines[j])
-                        if m:
-                            f["calories"] = int(m.group(1))
-                            break
-                    break
-
-    def _add_missing_foods_from_raw(self, meals: list, raw: str) -> None:
-        """把 raw_text 中已有食物未覆盖的热量条目补全为食物，附加到最近的餐"""
-        if not meals:
-            return
-        used_cals = set()
-        for meal in meals:
-            for f in meal.get("foods", []):
-                if isinstance(f, dict):
-                    fc = self._to_int(f.get("calories"))
-                    if fc is not None:
-                        used_cals.add(fc)
-
-        lines = [l.strip() for l in raw.splitlines() if l.strip()]
-        for i, line in enumerate(lines):
-            m = re.search(r"(\d+)\s*千卡", line)
-            if not m:
-                continue
-            cal = int(m.group(1))
-            if cal in used_cals:
-                continue
-            # 跳过建议范围、预算、摄入消耗等 summary 数字
-            if any(kw in line for kw in ("建议", "预算", "摄入", "消耗", "还可以吃")):
-                continue
-            # 往前找食物名和重量
-            name = ""
-            weight = ""
-            for j in range(i - 1, -1, -1):
-                candidate = lines[j]
-                if self._looks_like_food_name(candidate):
-                    name = candidate
-                    # 在食物名和热量行之间找重量
-                    for k in range(j + 1, i):
-                        if re.search(r"\d+(\.\d+)?\s*(克|毫升|两|份|套)", lines[k]):
-                            weight = lines[k]
-                            break
-                    break
-            if name:
-                meals[-1]["foods"].append({"name": name, "weight": weight, "calories": cal})
-                used_cals.add(cal)
-
-    def _infer_food_name(self, raw: str, weight: str, calories: Optional[int]) -> str:
-        """从 raw_text 中为缺失名称的食物推断食物名"""
-        if not isinstance(raw, str) or not raw.strip():
-            return ""
-        lines = [l.strip() for l in raw.splitlines() if l.strip()]
-        for i, line in enumerate(lines):
-            if calories is None or str(calories) not in line or "千卡" not in line:
-                continue
-            # 如果提供了 weight，要求 weight 出现在附近几行内，避免误配
-            if weight:
-                nearby = lines[max(0, i - 3):min(len(lines), i + 4)]
-                if not any(weight in l for l in nearby):
+                if re.search(r"\d+\s*千卡", fname):
                     continue
-            # 往前找第一个像食物名的行
-            for j in range(i - 1, -1, -1):
-                candidate = lines[j]
-                if self._looks_like_food_name(candidate):
-                    return candidate
-        return ""
+                foods.append({"name": fname, "weight": f.get("weight", ""), "calories": self._to_int(f.get("calories"))})
+            cleaned.append({"name": name, "calories": self._to_int(meal.get("calories")), "foods": foods})
+        return cleaned
 
     def _looks_like_food_name(self, text: str) -> bool:
         """判断一行文本是否像食物名"""
@@ -612,7 +597,7 @@ class VisionService:
         return total
 
     def _extract_diet_summary_from_raw(self, record: dict, raw: str) -> dict:
-        """从 raw_text 校正总热量、预算、剩余、三大营养素（优先级最高）"""
+        """从 raw_text 无条件校正总热量、预算、三大营养素，覆盖 AI 返回的任何值"""
         if not isinstance(raw, str) or not raw.strip():
             return record
 
@@ -621,43 +606,39 @@ class VisionService:
         if m:
             record["total_calories"] = int(m.group(1))
 
-        # 预算：「自定义预算」或「预算」
-        if not record.get("total_calories_target"):
-            m = re.search(r"自定义预算\s*[:：]?\s*(\d+)", raw)
-            if not m:
-                m = re.search(r"预算\s*[:：]?\s*(\d+)", raw)
-            if m:
-                record["total_calories_target"] = int(m.group(1))
+        # 预算：「自定义预算」或「预算」（无条件覆盖）
+        m = re.search(r"自定义预算\s*[:：]?\s*(\d+)", raw)
+        if not m:
+            m = re.search(r"预算\s*[:：]?\s*(\d+)", raw)
+        if m:
+            record["total_calories_target"] = int(m.group(1))
 
-        # 三大营养素：支持「碳水化合物 237 / 335克」「碳水化合物 237/335g」「碳水 237/335 克」等
+        # 三大营养素：支持「碳水化合物 237 / 335克」等（无条件覆盖当前值和目标值）
         # 蛋白质
-        if not record.get("total_protein_target"):
-            m = re.search(r"蛋白质\s*[:：]?\s*\D*(\d+)\s*/\s*(\d+)\s*[克g]", raw, re.IGNORECASE)
-            if not m:
-                m = re.search(r"蛋白质\s*[:：]?\s*(\d+)\s*/\s*(\d+)", raw)
-            if m:
-                record["total_protein"] = int(m.group(1))
-                record["total_protein_target"] = int(m.group(2))
+        m = re.search(r"蛋白质\s*[:：]?\s*\D*(\d+)\s*/\s*(\d+)\s*[克g]", raw, re.IGNORECASE)
+        if not m:
+            m = re.search(r"蛋白质\s*[:：]?\s*(\d+)\s*/\s*(\d+)", raw)
+        if m:
+            record["total_protein"] = int(m.group(1))
+            record["total_protein_target"] = int(m.group(2))
 
         # 碳水化合物
-        if not record.get("total_carbs_target"):
-            m = re.search(r"碳水化合物\s*[:：]?\s*\D*(\d+)\s*/\s*(\d+)\s*[克g]", raw, re.IGNORECASE)
-            if not m:
-                m = re.search(r"碳水\s*[:：]?\s*(\d+)\s*/\s*(\d+)\s*[克g]", raw, re.IGNORECASE)
-            if not m:
-                m = re.search(r"碳水化合物\s*[:：]?\s*(\d+)\s*/\s*(\d+)", raw)
-            if m:
-                record["total_carbs"] = int(m.group(1))
-                record["total_carbs_target"] = int(m.group(2))
+        m = re.search(r"碳水化合物\s*[:：]?\s*\D*(\d+)\s*/\s*(\d+)\s*[克g]", raw, re.IGNORECASE)
+        if not m:
+            m = re.search(r"碳水\s*[:：]?\s*(\d+)\s*/\s*(\d+)\s*[克g]", raw, re.IGNORECASE)
+        if not m:
+            m = re.search(r"碳水化合物\s*[:：]?\s*(\d+)\s*/\s*(\d+)", raw)
+        if m:
+            record["total_carbs"] = int(m.group(1))
+            record["total_carbs_target"] = int(m.group(2))
 
         # 脂肪
-        if not record.get("total_fat_target"):
-            m = re.search(r"脂肪\s*[:：]?\s*\D*(\d+)\s*/\s*(\d+)\s*[克g]", raw, re.IGNORECASE)
-            if not m:
-                m = re.search(r"脂肪\s*[:：]?\s*(\d+)\s*/\s*(\d+)", raw)
-            if m:
-                record["total_fat"] = int(m.group(1))
-                record["total_fat_target"] = int(m.group(2))
+        m = re.search(r"脂肪\s*[:：]?\s*\D*(\d+)\s*/\s*(\d+)\s*[克g]", raw, re.IGNORECASE)
+        if not m:
+            m = re.search(r"脂肪\s*[:：]?\s*(\d+)\s*/\s*(\d+)", raw)
+        if m:
+            record["total_fat"] = int(m.group(1))
+            record["total_fat_target"] = int(m.group(2))
 
         return record
 
