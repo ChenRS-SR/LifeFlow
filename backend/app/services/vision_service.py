@@ -634,31 +634,65 @@ class VisionService:
                 record["total_calories_target"] = int(m.group(1))
                 break
 
-        # 三大营养素：支持标题和数值分行的排版
-        # 对每个标题，在 raw_text 中定位后取最近的一个 "数字 / 数字 克"（最多跨 60 字符）
-        def extract_nutrient(title: str) -> Optional[tuple]:
-            pattern = re.compile(
-                re.escape(title) + r".{0,60}?(\d+)\s*/\s*(\d+)\s*[克g]",
-                re.DOTALL | re.IGNORECASE,
-            )
-            m = pattern.search(raw)
-            if m:
-                return int(m.group(1)), int(m.group(2))
-            return None
+        # 三大营养素：兼容两种常见排版
+        #   A) 标题与数值交错：碳水化合物 / 323/335克 / 蛋白质 / 118/151克 ...
+        #   B) 标题分组+数值分组：碳水化合物 / 蛋白质 / 脂肪 / 323/335克 / 118/151克 / 161/76克
+        # 薄荷健康三种营养素顺序固定为：碳水化合物、蛋白质、脂肪，因此按顺序映射最可靠。
+        nutrient_titles = ["碳水化合物", "蛋白质", "脂肪"]
+        title_indices: List[int] = []
+        for i, line in enumerate(lines):
+            if any(line.startswith(t) for t in nutrient_titles):
+                title_indices.append(i)
 
-        protein = extract_nutrient("蛋白质")
-        if protein:
-            record["total_protein"], record["total_protein_target"] = protein
+        # 从第一个标题之后收集所有 "当前/目标 克" 数值对，直到遇到餐名或没有数字行为止
+        value_pairs: List[tuple] = []
+        if title_indices:
+            start = title_indices[0] + 1
+            for j in range(start, len(lines)):
+                line = lines[j]
+                # 遇到餐名或明显非营养素区域就停止
+                if any(line.startswith(prefix) for prefix in ("早餐", "早加餐", "午餐", "午加餐", "晚餐", "晚加餐", "加餐")):
+                    break
+                matches = re.findall(r"(\d+)\s*/\s*(\d+)\s*[克g]", line)
+                if matches:
+                    for cur, tgt in matches:
+                        value_pairs.append((int(cur), int(tgt)))
 
-        carbs = extract_nutrient("碳水化合物")
-        if not carbs:
-            carbs = extract_nutrient("碳水")
-        if carbs:
-            record["total_carbs"], record["total_carbs_target"] = carbs
+        # 如果标题数量与数值对数量一致，按顺序映射
+        if len(title_indices) == len(value_pairs) and len(title_indices) > 0:
+            title_order = [lines[idx] for idx in title_indices]
+            for title_line, (cur, tgt) in zip(title_order, value_pairs):
+                if title_line.startswith("碳水化合物"):
+                    record["total_carbs"], record["total_carbs_target"] = cur, tgt
+                elif title_line.startswith("蛋白质"):
+                    record["total_protein"], record["total_protein_target"] = cur, tgt
+                elif title_line.startswith("脂肪"):
+                    record["total_fat"], record["total_fat_target"] = cur, tgt
+        else:
+            # 数量对不上时，兜底：每个标题后取最近的一个数值对
+            def extract_nutrient(title: str) -> Optional[tuple]:
+                pattern = re.compile(
+                    re.escape(title) + r".{0,60}?(\d+)\s*/\s*(\d+)\s*[克g]",
+                    re.DOTALL | re.IGNORECASE,
+                )
+                m = pattern.search(raw)
+                if m:
+                    return int(m.group(1)), int(m.group(2))
+                return None
 
-        fat = extract_nutrient("脂肪")
-        if fat:
-            record["total_fat"], record["total_fat_target"] = fat
+            protein = extract_nutrient("蛋白质")
+            if protein:
+                record["total_protein"], record["total_protein_target"] = protein
+
+            carbs = extract_nutrient("碳水化合物")
+            if not carbs:
+                carbs = extract_nutrient("碳水")
+            if carbs:
+                record["total_carbs"], record["total_carbs_target"] = carbs
+
+            fat = extract_nutrient("脂肪")
+            if fat:
+                record["total_fat"], record["total_fat_target"] = fat
 
         return record
 
