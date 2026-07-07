@@ -1533,13 +1533,14 @@ export default function Reviews() {
       const res = await visionAPI.recognize(existingReview.id, type, file);
       const record = res.data?.record;
       if (record) {
-        setDailyForm(prev => ({
-          ...prev,
+        // 同步构造最新 form，避免 setDailyForm 异步导致保存读到旧数据
+        const updatedForm: DailyFormData = {
+          ...dailyForm,
           [type === 'diet' ? 'diet_record' : 'workout_record']: record
-        }));
+        };
+        setDailyForm(updatedForm);
         showToast(`${type === 'diet' ? '饮食' : '健身'}记录识别完成，正在自动保存...`, 'success');
-        // 识别成功后自动保存，避免用户忘记点保存导致刷新后丢失
-        await handleSave();
+        await saveDailyForm(updatedForm);
       }
     } catch (error: any) {
       console.error('图片识别失败:', error);
@@ -1601,44 +1602,44 @@ export default function Reviews() {
     }
   };
 
-  // 保存复盘
-  const handleSave = async () => {
+  // 实际保存逻辑，接受当前要保存的 form（识别后可直接传入最新数据）
+  const saveDailyForm = async (formToSave: DailyFormData) => {
     setSaving(true);
     try {
       const params = getPeriodParams();
       let data: any;
-      
+
       if (activeTab === 'daily') {
         // 清理 timeline 数据，确保格式正确
-        const cleanTimeline = dailyForm.timeline.map(item => ({
+        const cleanTimeline = formToSave.timeline.map(item => ({
           time: item.time || '09:00',
           content: item.content,
           type: item.type || 'life',
           ref_id: item.ref_id || null
         }));
-        
+
         data = {
           period: activeTab,
           ...params,
           timeline: cleanTimeline,
-          notes: dailyForm.notes,
-          tomorrow: dailyForm.tomorrow,
-          mood: dailyForm.mood,
-          diet_record: dailyForm.diet_record,
-          workout_record: dailyForm.workout_record,
-          highlights: dailyForm.notes, // 兼容旧字段
-          next_steps: dailyForm.tomorrow
+          notes: formToSave.notes,
+          tomorrow: formToSave.tomorrow,
+          mood: formToSave.mood,
+          diet_record: formToSave.diet_record,
+          workout_record: formToSave.workout_record,
+          highlights: formToSave.notes, // 兼容旧字段
+          next_steps: formToSave.tomorrow
         };
       } else {
         data = { period: activeTab, ...params, ...formData };
       }
-      
+
       if (existingReview) {
         await reviewsAPI.update(existingReview.id, data);
       } else {
         await reviewsAPI.create(data);
       }
-      
+
       await loadCurrentReview();
       await loadReviews();
       showToast('复盘已保存', 'success');
@@ -1662,6 +1663,11 @@ export default function Reviews() {
     } finally {
       setSaving(false);
     }
+  };
+
+  // 保存复盘（按钮触发）
+  const handleSave = async () => {
+    await saveDailyForm(dailyForm);
   };
 
   // 周期切换
